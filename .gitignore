@@ -1,0 +1,21 @@
+# Variables de entorno
+.env
+
+# Base de datos
+data/*.db
+data/*.db-journal
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Sistema
+.DS_Store
+Thumbs.db
