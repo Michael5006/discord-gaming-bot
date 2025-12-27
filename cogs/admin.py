@@ -156,17 +156,29 @@ class Admin(commands.Cog):
         await interaction.response.send_message(embed=embed)
     
     @app_commands.command(name="aprobar", description="[ADMIN] Aprobar un juego")
-    @app_commands.describe(game_id="ID del juego a aprobar")
+    @app_commands.describe(juego="Juego a aprobar")
     @app_commands.check(is_admin)
-    async def aprobar(self, interaction: discord.Interaction, game_id: int):
+    async def aprobar(self, interaction: discord.Interaction, juego: str):
         """Aprueba un juego pendiente"""
+        
+        # El parámetro 'juego' viene como "ID:Usuario - Nombre del Juego"
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
         
         game = await Game.get_by_id(game_id)
         
         if not game:
             embed = discord.Embed(
                 title=f"{config.EMOJIS['error']} Error",
-                description=f"No se encontró ningún juego con ID **{game_id}**.",
+                description=f"No se encontró el juego.",
                 color=config.COLORES['rechazado']
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -181,10 +193,14 @@ class Admin(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
+        # Aprobar el juego
         success = await Game.approve(game_id, interaction.user.id)
         
         if success:
+            # Actualizar estadísticas del usuario
             await User.update_stats(game.discord_user_id)
+            
+            # Obtener usuario actualizado
             user = await User.get(game.discord_user_id)
             
             embed = discord.Embed(
@@ -215,6 +231,7 @@ class Admin(commands.Cog):
             
             await interaction.response.send_message(embed=embed)
             
+            # Intentar notificar al usuario
             try:
                 user_discord = await self.bot.fetch_user(game.discord_user_id)
                 notif_embed = discord.Embed(
@@ -243,21 +260,64 @@ class Admin(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
     
+    @aprobar.autocomplete('juego')
+    async def aprobar_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado para juegos pendientes"""
+        
+        # Obtener todos los juegos pendientes
+        games = await Game.get_pending()
+        
+        if not games:
+            return [app_commands.Choice(name="No hay juegos pendientes", value="0:ninguno")]
+        
+        # Filtrar por lo que el usuario está escribiendo
+        filtered_games = [
+            game for game in games
+            if current.lower() in game.game_name.lower() or current.lower() in game.username.lower()
+        ][:25]
+        
+        # Crear opciones con formato "ID:Usuario - Nombre - Categoría (Puntos)"
+        choices = []
+        for game in filtered_games:
+            platino_text = " 🏆" if game.has_platinum else ""
+            recomp_text = " 🔄" if game.is_recompleted else ""
+            choice_name = f"{game.username} - {game.game_name}{platino_text}{recomp_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.username} - {game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices
+    
     @app_commands.command(name="rechazar", description="[ADMIN] Rechazar un juego")
     @app_commands.describe(
-        game_id="ID del juego a rechazar",
+        juego="Juego a rechazar",
         razon="Razón del rechazo"
     )
     @app_commands.check(is_admin)
-    async def rechazar(self, interaction: discord.Interaction, game_id: int, razon: str):
+    async def rechazar(self, interaction: discord.Interaction, juego: str, razon: str):
         """Rechaza un juego pendiente"""
+        
+        # El parámetro 'juego' viene como "ID:Usuario - Nombre del Juego"
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
         
         game = await Game.get_by_id(game_id)
         
         if not game:
             embed = discord.Embed(
                 title=f"{config.EMOJIS['error']} Error",
-                description=f"No se encontró ningún juego con ID **{game_id}**.",
+                description=f"No se encontró el juego.",
                 color=config.COLORES['rechazado']
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -272,6 +332,7 @@ class Admin(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
+        # Rechazar el juego
         success = await Game.reject(game_id, interaction.user.id, razon)
         
         if success:
@@ -297,6 +358,7 @@ class Admin(commands.Cog):
             
             await interaction.response.send_message(embed=embed)
             
+            # Intentar notificar al usuario
             try:
                 user_discord = await self.bot.fetch_user(game.discord_user_id)
                 notif_embed = discord.Embed(
@@ -320,6 +382,37 @@ class Admin(commands.Cog):
                 color=config.COLORES['rechazado']
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @rechazar.autocomplete('juego')
+    async def rechazar_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado para juegos pendientes"""
+        
+        # Obtener todos los juegos pendientes
+        games = await Game.get_pending()
+        
+        if not games:
+            return [app_commands.Choice(name="No hay juegos pendientes", value="0:ninguno")]
+        
+        # Filtrar por lo que el usuario está escribiendo
+        filtered_games = [
+            game for game in games
+            if current.lower() in game.game_name.lower() or current.lower() in game.username.lower()
+        ][:25]
+        
+        # Crear opciones con formato "ID:Usuario - Nombre - Categoría (Puntos)"
+        choices = []
+        for game in filtered_games:
+            platino_text = " 🏆" if game.has_platinum else ""
+            recomp_text = " 🔄" if game.is_recompleted else ""
+            choice_name = f"{game.username} - {game.game_name}{platino_text}{recomp_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.username} - {game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices
     
     @app_commands.command(name="marcar-elkie", description="[ADMIN] Marcar o desmarcar a un usuario como Elkie")
     @app_commands.describe(usuario="Usuario a marcar/desmarcar como Elkie")
