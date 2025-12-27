@@ -358,9 +358,11 @@ class Admin(commands.Cog):
         finally:
             await db.close()
             
+     ## EDITAR JUEGO ##       
     @app_commands.command(name="editar-juego", description="[ADMIN] Editar un juego aprobado")
     @app_commands.describe(
-        game_id="ID del juego a editar",
+        usuario="Usuario dueño del juego",
+        juego="Juego a editar",
         nombre="Nuevo nombre del juego (opcional)",
         categoria="Nueva categoría (opcional)",
         plataforma="Nueva plataforma (opcional)",
@@ -389,7 +391,8 @@ class Admin(commands.Cog):
     async def editar_juego(
         self,
         interaction: discord.Interaction,
-        game_id: int,
+        usuario: discord.User,
+        juego: str,
         nombre: str = None,
         categoria: app_commands.Choice[str] = None,
         plataforma: app_commands.Choice[str] = None,
@@ -398,13 +401,36 @@ class Admin(commands.Cog):
     ):
         """Edita un juego ya registrado"""
         
+        # El parámetro 'juego' vendrá como "ID:Nombre del Juego"
+        # Extraer el ID
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
         # Obtener el juego
         game = await Game.get_by_id(game_id)
         
         if not game:
             embed = discord.Embed(
                 title=f"{config.EMOJIS['error']} Error",
-                description=f"No se encontró ningún juego con ID **{game_id}**.",
+                description=f"No se encontró el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que el juego pertenece al usuario seleccionado
+        if game.discord_user_id != usuario.id:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description=f"Este juego no pertenece a {usuario.name}.",
                 color=config.COLORES['rechazado']
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -492,7 +518,7 @@ class Admin(commands.Cog):
             # Embed de confirmación
             embed = discord.Embed(
                 title=f"{config.EMOJIS['editar']} Juego Editado",
-                description=f"El juego **{nuevo_nombre}** (ID: {game_id}) ha sido modificado.",
+                description=f"El juego **{nuevo_nombre}** ha sido modificado.",
                 color=config.COLORES['aprobado']
             )
             
@@ -510,7 +536,7 @@ class Admin(commands.Cog):
                 )
             
             embed.add_field(
-                name=f"{config.EMOJIS['usuario']} Usuario: {game.username}",
+                name=f"{config.EMOJIS['usuario']} Usuario: {usuario.name}",
                 value=f"Puntos totales: **{user.total_points}** pts ({user.total_games} juegos)",
                 inline=False
             )
@@ -521,7 +547,6 @@ class Admin(commands.Cog):
             
             # Notificar al usuario
             try:
-                user_discord = await self.bot.fetch_user(game.discord_user_id)
                 notif_embed = discord.Embed(
                     title=f"{config.EMOJIS['editar']} Tu Juego Fue Editado",
                     description=f"Un admin modificó tu juego **{nuevo_nombre}**.",
@@ -537,12 +562,48 @@ class Admin(commands.Cog):
                     value=f"Ahora tienes **{user.total_points}** pts totales",
                     inline=False
                 )
-                await user_discord.send(embed=notif_embed)
+                await usuario.send(embed=notif_embed)
             except:
                 pass
             
         finally:
             await db.close()
+    
+    @editar_juego.autocomplete('juego')
+    async def juego_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado dinámico para mostrar juegos del usuario seleccionado"""
+        
+        # Obtener el usuario que se seleccionó en el comando
+        usuario = interaction.namespace.usuario
+        
+        if not usuario:
+            return []
+        
+        # Obtener todos los juegos del usuario
+        games = await Game.get_by_user(usuario.id, status='APPROVED')
+        
+        if not games:
+            return [app_commands.Choice(name="Este usuario no tiene juegos", value="0:ninguno")]
+        
+        # Filtrar por lo que el usuario está escribiendo
+        filtered_games = [
+            game for game in games
+            if current.lower() in game.game_name.lower()
+        ][:25]  # Discord limita a 25 opciones
+        
+        # Crear opciones con formato "ID:Nombre - Categoría (Puntos)"
+        choices = []
+        for game in filtered_games:
+            platino_text = " 🏆" if game.has_platinum else ""
+            choice_name = f"{game.game_name}{platino_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices 
     
     @pendientes.error
     @revisar.error
