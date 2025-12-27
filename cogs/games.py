@@ -168,7 +168,7 @@ class Games(commands.Cog):
             
             embed.add_field(
                 name=f"{i}. {game.game_name}{platino_text}{recompletado_text}",
-                value=f"{categoria_emoji} {game.category} • {game.platform} • {game.total_points} pts",
+                value=f"{categoria_emoji} {game.category} • {game.platform} • {game.total_points} pts\n`ID: {game.id}`",
                 inline=False
             )
         
