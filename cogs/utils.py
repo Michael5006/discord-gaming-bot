@@ -130,6 +130,7 @@ class Utils(commands.Cog):
                 "`/revisar [id]` - Revisar un juego\n"
                 "`/aprobar [id]` - Aprobar un juego\n"
                 "`/rechazar [id]` - Rechazar un juego\n"
+                "`/editar-juego [id]` - Editar un juego aprobado\n"
                 "`/marcar-elkie` - Marcar/desmarcar Elkie"
             )
             

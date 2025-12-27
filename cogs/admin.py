@@ -357,12 +357,199 @@ class Admin(commands.Cog):
             await interaction.response.send_message(embed=embed)
         finally:
             await db.close()
+            
+    @app_commands.command(name="editar-juego", description="[ADMIN] Editar un juego aprobado")
+    @app_commands.describe(
+        game_id="ID del juego a editar",
+        nombre="Nuevo nombre del juego (opcional)",
+        categoria="Nueva categoría (opcional)",
+        plataforma="Nueva plataforma (opcional)",
+        platino="¿Tiene platino? (opcional)",
+        recompletado="¿Es re-completado? (opcional)"
+    )
+    @app_commands.choices(categoria=[
+        app_commands.Choice(name=f"{config.EMOJIS['retro']} Retro (1 punto)", value="Retro"),
+        app_commands.Choice(name=f"{config.EMOJIS['indie']} Indie (1 punto)", value="Indie"),
+        app_commands.Choice(name=f"{config.EMOJIS['aa']} AA (2 puntos)", value="Aa"),
+        app_commands.Choice(name=f"{config.EMOJIS['aaa']} AAA (3 puntos)", value="Aaa"),
+    ])
+    @app_commands.choices(plataforma=[
+        app_commands.Choice(name=f"{config.EMOJIS['ps5']} PlayStation 5", value="PS5"),
+        app_commands.Choice(name=f"{config.EMOJIS['steam']} Steam", value="Steam"),
+    ])
+    @app_commands.choices(platino=[
+        app_commands.Choice(name=f"{config.EMOJIS['platino']} Sí", value="si"),
+        app_commands.Choice(name="❌ No", value="no"),
+    ])
+    @app_commands.choices(recompletado=[
+        app_commands.Choice(name="🆕 No", value="no"),
+        app_commands.Choice(name="🔄 Sí", value="si"),
+    ])
+    @app_commands.check(is_admin)
+    async def editar_juego(
+        self,
+        interaction: discord.Interaction,
+        game_id: int,
+        nombre: str = None,
+        categoria: app_commands.Choice[str] = None,
+        plataforma: app_commands.Choice[str] = None,
+        platino: app_commands.Choice[str] = None,
+        recompletado: app_commands.Choice[str] = None
+    ):
+        """Edita un juego ya registrado"""
+        
+        # Obtener el juego
+        game = await Game.get_by_id(game_id)
+        
+        if not game:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description=f"No se encontró ningún juego con ID **{game_id}**.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar si hay algo que editar
+        if not any([nombre, categoria, plataforma, platino, recompletado]):
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['advertencia']} Sin Cambios",
+                description="No especificaste ningún campo para editar.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Guardar valores originales para mostrar
+        cambios = []
+        
+        # Preparar valores nuevos (mantener los viejos si no se especifica)
+        nuevo_nombre = nombre if nombre else game.game_name
+        nueva_categoria = categoria.value if categoria else game.category
+        nueva_plataforma = plataforma.value if plataforma else game.platform
+        nuevo_platino = (platino.value == "si") if platino else game.has_platinum
+        nuevo_recompletado = (recompletado.value == "si") if recompletado else game.is_recompleted
+        
+        # Registrar cambios
+        if nombre and nombre != game.game_name:
+            cambios.append(f"**Nombre:** {game.game_name} → {nombre}")
+        
+        if categoria and categoria.value != game.category:
+            cambios.append(f"**Categoría:** {game.category} → {categoria.value}")
+        
+        if plataforma and plataforma.value != game.platform:
+            cambios.append(f"**Plataforma:** {game.platform} → {plataforma.value}")
+        
+        if platino:
+            nuevo_estado = "Sí" if platino.value == "si" else "No"
+            viejo_estado = "Sí" if game.has_platinum else "No"
+            if nuevo_estado != viejo_estado:
+                cambios.append(f"**Platino:** {viejo_estado} → {nuevo_estado}")
+        
+        if recompletado:
+            nuevo_estado = "Sí" if recompletado.value == "si" else "No"
+            viejo_estado = "Sí" if game.is_recompleted else "No"
+            if nuevo_estado != viejo_estado:
+                cambios.append(f"**Re-completado:** {viejo_estado} → {nuevo_estado}")
+        
+        # Si no hay cambios reales
+        if not cambios:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['info']} Sin Cambios",
+                description="Los valores especificados son iguales a los actuales.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Recalcular puntos
+        nuevos_puntos = config.PUNTOS_CATEGORIA[nueva_categoria.lower()]
+        if nuevo_platino:
+            nuevos_puntos += config.PUNTOS_CATEGORIA['platino']
+        
+        # Actualizar en la base de datos
+        db = await get_db()
+        try:
+            await db.execute('''
+                UPDATE games
+                SET game_name = ?,
+                    category = ?,
+                    platform = ?,
+                    has_platinum = ?,
+                    is_recompleted = ?,
+                    total_points = ?
+                WHERE id = ?
+            ''', (nuevo_nombre, nueva_categoria, nueva_plataforma, 
+                  int(nuevo_platino), int(nuevo_recompletado), nuevos_puntos, game_id))
+            await db.commit()
+            
+            # Actualizar estadísticas del usuario
+            await User.update_stats(game.discord_user_id)
+            
+            # Obtener usuario actualizado
+            user = await User.get(game.discord_user_id)
+            
+            # Embed de confirmación
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['editar']} Juego Editado",
+                description=f"El juego **{nuevo_nombre}** (ID: {game_id}) ha sido modificado.",
+                color=config.COLORES['aprobado']
+            )
+            
+            embed.add_field(
+                name="📝 Cambios Realizados",
+                value="\n".join(cambios),
+                inline=False
+            )
+            
+            if game.total_points != nuevos_puntos:
+                embed.add_field(
+                    name=f"{config.EMOJIS['puntos']} Puntos",
+                    value=f"{game.total_points} pts → **{nuevos_puntos} pts**",
+                    inline=True
+                )
+            
+            embed.add_field(
+                name=f"{config.EMOJIS['usuario']} Usuario: {game.username}",
+                value=f"Puntos totales: **{user.total_points}** pts ({user.total_games} juegos)",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Editado por {interaction.user.name}")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            # Notificar al usuario
+            try:
+                user_discord = await self.bot.fetch_user(game.discord_user_id)
+                notif_embed = discord.Embed(
+                    title=f"{config.EMOJIS['editar']} Tu Juego Fue Editado",
+                    description=f"Un admin modificó tu juego **{nuevo_nombre}**.",
+                    color=config.COLORES['info']
+                )
+                notif_embed.add_field(
+                    name="Cambios",
+                    value="\n".join(cambios),
+                    inline=False
+                )
+                notif_embed.add_field(
+                    name="Puntos Actuales",
+                    value=f"Ahora tienes **{user.total_points}** pts totales",
+                    inline=False
+                )
+                await user_discord.send(embed=notif_embed)
+            except:
+                pass
+            
+        finally:
+            await db.close()
     
     @pendientes.error
     @revisar.error
     @aprobar.error
     @rechazar.error
     @marcar_elkie.error
+    @editar_juego.error
     async def admin_error(self, interaction: discord.Interaction, error):
         """Maneja errores de permisos de admin"""
         if isinstance(error, app_commands.CheckFailure):
