@@ -698,12 +698,182 @@ class Admin(commands.Cog):
         
         return choices 
     
+    @app_commands.command(name="eliminar-juego", description="[ADMIN] Eliminar cualquier juego del sistema")
+    @app_commands.describe(
+        usuario="Usuario dueño del juego",
+        juego="Juego a eliminar"
+    )
+    @app_commands.check(is_admin)
+    async def eliminar_juego(self, interaction: discord.Interaction, usuario: discord.User, juego: str):
+        """Permite a un admin eliminar cualquier juego"""
+        
+        # El parámetro 'juego' viene como "ID:Nombre del Juego"
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Obtener el juego
+        game = await Game.get_by_id(game_id)
+        
+        if not game:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="No se encontró el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que pertenece al usuario seleccionado
+        if game.discord_user_id != usuario.id:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description=f"Este juego no pertenece a {usuario.name}.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Guardar info antes de eliminar
+        game_name = game.game_name
+        game_status = game.status
+        game_points = game.total_points
+        user_id = game.discord_user_id
+        
+        # Eliminar el juego
+        db = await get_db()
+        try:
+            await db.execute('DELETE FROM games WHERE id = ?', (game_id,))
+            await db.commit()
+            
+            # Si era aprobado, actualizar stats del usuario
+            if game_status == 'APPROVED':
+                await User.update_stats(user_id)
+                user = await User.get(user_id)
+                stats_text = f"\n\n**Stats actualizadas de {usuario.name}:**\nPuntos totales: {user.total_points} pts ({user.total_games} juegos)"
+            else:
+                stats_text = ""
+            
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['eliminar']} Juego Eliminado",
+                description=f"**{game_name}** ha sido eliminado del sistema.",
+                color=config.COLORES['aprobado']
+            )
+            
+            status_emoji = {
+                'PENDING': '⏳ Pendiente',
+                'APPROVED': '✅ Aprobado',
+                'REJECTED': '❌ Rechazado'
+            }.get(game_status, game_status)
+            
+            embed.add_field(
+                name="Información del Juego Eliminado",
+                value=(
+                    f"**Juego:** {game_name}\n"
+                    f"**Usuario:** {usuario.name}\n"
+                    f"**Estado:** {status_emoji}\n"
+                    f"**Puntos:** {game_points} pts"
+                    f"{stats_text}"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Eliminado por {interaction.user.name}")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            # Notificar al usuario
+            try:
+                notif_embed = discord.Embed(
+                    title=f"{config.EMOJIS['advertencia']} Tu Juego Fue Eliminado",
+                    description=f"Un admin eliminó tu juego **{game_name}**.",
+                    color=config.COLORES['info']
+                )
+                notif_embed.add_field(
+                    name="Estado del juego",
+                    value=status_emoji,
+                    inline=False
+                )
+                if game_status == 'APPROVED':
+                    notif_embed.add_field(
+                        name="Tus puntos actuales",
+                        value=f"{user.total_points} pts ({user.total_games} juegos)",
+                        inline=False
+                    )
+                await usuario.send(embed=notif_embed)
+            except:
+                pass
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Hubo un error al eliminar el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        finally:
+            await db.close()
+    
+    @eliminar_juego.autocomplete('juego')
+    async def eliminar_juego_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado para juegos del usuario seleccionado"""
+        
+        # Obtener el usuario seleccionado
+        usuario = interaction.namespace.usuario
+        
+        if not usuario:
+            return []
+        
+        # Obtener todos los juegos del usuario (pendientes y aprobados)
+        pending_games = await Game.get_by_user(usuario.id, status='PENDING')
+        approved_games = await Game.get_by_user(usuario.id, status='APPROVED')
+        all_games = pending_games + approved_games
+        
+        if not all_games:
+            return [app_commands.Choice(name="Este usuario no tiene juegos", value="0:ninguno")]
+        
+        # Filtrar por lo que está escribiendo
+        filtered_games = [
+            game for game in all_games
+            if current.lower() in game.game_name.lower()
+        ][:25]
+        
+        # Crear opciones
+        choices = []
+        for game in filtered_games:
+            status_emoji = {
+                'PENDING': '⏳',
+                'APPROVED': '✅',
+                'REJECTED': '❌'
+            }.get(game.status, '')
+            
+            platino_text = " 🏆" if game.has_platinum else ""
+            recomp_text = " 🔄" if game.is_recompleted else ""
+            
+            choice_name = f"{status_emoji} {game.game_name}{platino_text}{recomp_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices
+    
     @pendientes.error
     @revisar.error
     @aprobar.error
     @rechazar.error
     @marcar_elkie.error
     @editar_juego.error
+    @eliminar_juego.error
     async def admin_error(self, interaction: discord.Interaction, error):
         """Maneja errores de permisos de admin"""
         if isinstance(error, app_commands.CheckFailure):

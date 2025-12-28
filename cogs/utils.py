@@ -106,15 +106,17 @@ class Utils(commands.Cog):
         
         # Comandos para usuarios
         user_commands = (
-            "`/registrar` - Registrar un juego\n"
+            "`/registrar` - Registrar un juego completado\n"
             "`/mis-juegos` - Ver tus juegos aprobados\n"
-            "`/mis-pendientes` - Ver pendientes\n"
-            "`/ranking` - Ver el ranking\n"
-            "`/mi-posicion` - Ver tu posición\n"
-            "`/estadisticas` - Ver estadísticas\n"
-            "`/reglas` - Ver las reglas\n"
-            "`/ping` - Verificar el bot\n"
-            "`/info` - Información del bot"
+            "`/mis-pendientes` - Ver juegos pendientes de aprobación\n"
+            "`/eliminar-pendiente` - Eliminar uno de tus juegos pendientes\n"
+            "`/ranking` - Ver el ranking general\n"
+            "`/mi-posicion` - Ver tu posición actual\n"
+            "`/estadisticas` - Ver estadísticas detalladas\n"
+            "`/reglas` - Ver las reglas del concurso\n"
+            "`/ayuda` - Mostrar este mensaje\n"
+            "`/ping` - Verificar si el bot funciona\n"
+            "`/info` - Información sobre el bot"
         )
         
         embed.add_field(
@@ -131,6 +133,7 @@ class Utils(commands.Cog):
                 "`/aprobar [id]` - Aprobar un juego\n"
                 "`/rechazar [id]` - Rechazar un juego\n"
                 "`/editar-juego [id]` - Editar un juego aprobado\n"
+                "`/eliminar-juego` - Eliminar cualquier juego\n"
                 "`/marcar-elkie` - Marcar/desmarcar Elkie"
             )
             

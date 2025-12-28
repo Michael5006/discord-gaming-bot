@@ -212,6 +212,117 @@ class Games(commands.Cog):
         embed.set_footer(text="Los admins revisarán tus juegos pronto")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+    @app_commands.command(name="eliminar-pendiente", description="Eliminar uno de tus juegos pendientes")
+    @app_commands.describe(juego="Juego pendiente a eliminar")
+    async def eliminar_pendiente(self, interaction: discord.Interaction, juego: str):
+        """Permite a un usuario eliminar sus propios juegos pendientes"""
+        
+        # El parámetro 'juego' viene como "ID:Nombre del Juego"
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Obtener el juego
+        game = await Game.get_by_id(game_id)
+        
+        if not game:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="No se encontró el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que sea del usuario
+        if game.discord_user_id != interaction.user.id:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Sin Permisos",
+                description="Solo puedes eliminar tus propios juegos.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que esté pendiente
+        if game.status != 'PENDING':
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['advertencia']} No Disponible",
+                description="Solo puedes eliminar juegos que estén pendientes de aprobación.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Eliminar el juego
+        from models.database import get_db
+        db = await get_db()
+        try:
+            await db.execute('DELETE FROM games WHERE id = ?', (game_id,))
+            await db.commit()
+            
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['eliminar']} Juego Eliminado",
+                description=f"**{game.game_name}** ha sido eliminado de tus pendientes.",
+                color=config.COLORES['aprobado']
+            )
+            
+            embed.add_field(
+                name="Juego Eliminado",
+                value=f"{game.game_name} - {game.category} ({game.total_points} pts)",
+                inline=False
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Hubo un error al eliminar el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        finally:
+            await db.close()
+    
+    @eliminar_pendiente.autocomplete('juego')
+    async def eliminar_pendiente_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado para juegos pendientes del usuario"""
+        
+        # Obtener juegos pendientes del usuario
+        games = await Game.get_by_user(interaction.user.id, status='PENDING')
+        
+        if not games:
+            return [app_commands.Choice(name="No tienes juegos pendientes", value="0:ninguno")]
+        
+        # Filtrar por lo que está escribiendo
+        filtered_games = [
+            game for game in games
+            if current.lower() in game.game_name.lower()
+        ][:25]
+        
+        # Crear opciones
+        choices = []
+        for game in filtered_games:
+            platino_text = " 🏆" if game.has_platinum else ""
+            recomp_text = " 🔄" if game.is_recompleted else ""
+            choice_name = f"{game.game_name}{platino_text}{recomp_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices
 
 async def setup(bot):
     await bot.add_cog(Games(bot))
