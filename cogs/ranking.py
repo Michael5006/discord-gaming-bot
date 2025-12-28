@@ -344,60 +344,38 @@ class Ranking(commands.Cog):
             await interaction.followup.send(embed=embed)
             return
         
-        # ==================== EMBED 1: RANKING ====================
+        # ==================== EMBED 1: RANKING Y ESTADÍSTICAS ====================
         embed1 = discord.Embed(
-            title=f"{config.EMOJIS['ranking']} DASHBOARD DEL CONCURSO",
-            description="═══════════════════════════",
+            title=f"🏆 DASHBOARD DEL CONCURSO 2025-2027",
             color=config.COLORES['info']
         )
         
-        # Top 5 ranking
-        medals = ['🥇', '🥈', '🥉', '4.', '5.']
+        # TOP 5 RANKING (más compacto)
         ranking_text = ""
+        medals = {1: '🥇', 2: '🥈', 3: '🥉'}
         
         for i, user in enumerate(ranked_users[:5], 1):
-            medal = medals[i-1] if i <= 5 else f"{i}."
-            
-            # Barra de progreso
-            if ranked_users[0].total_points > 0:
-                progress = int((user.total_points / ranked_users[0].total_points) * 12)
-                bar = "█" * progress + "░" * (12 - progress)
-            else:
-                bar = "░" * 12
-            
+            medal = medals.get(i, f'**{i}.**')
             elkie_marker = " 👑" if user.is_elkie else ""
-            ranking_text += f"{medal} **{user.username}**{elkie_marker}\n{bar} `{user.total_points} pts` ({user.total_games} juegos)\n\n"
+            
+            # Barra simple y limpia
+            if ranked_users[0].total_points > 0:
+                percentage = int((user.total_points / ranked_users[0].total_points) * 100)
+                filled = percentage // 10
+                bar = "▰" * filled + "▱" * (10 - filled)
+            else:
+                bar = "▱" * 10
+            
+            ranking_text += f"{medal} **{user.username}**{elkie_marker}\n"
+            ranking_text += f"{bar} {user.total_points} pts • {user.total_games} juegos\n\n"
         
         embed1.add_field(
-            name="🏆 TOP 5 RANKING",
-            value=ranking_text if ranking_text else "Sin datos",
+            name="👥 TOP 5 PARTICIPANTES",
+            value=ranking_text,
             inline=False
         )
         
-        # Información de premios
-        premio_text = "💰 **PREMIOS:**\n"
-        if ranked_users and ranked_users[0].is_elkie:
-            premio_text += (
-                "⚠️ **REGLA ESPECIAL ACTIVA**\n"
-                "🥇 1er lugar: Juego de $30 USD\n"
-                "🥈 2do lugar: Juego de $20 USD"
-            )
-        else:
-            premio_text += "🥇 1er lugar: Juego de $30 USD"
-        
-        embed1.add_field(
-            name="═══════════════════════════",
-            value=premio_text,
-            inline=False
-        )
-        
-        # ==================== EMBED 2: ESTADÍSTICAS GRUPALES ====================
-        embed2 = discord.Embed(
-            title="📊 ESTADÍSTICAS GRUPALES",
-            color=config.COLORES['info']
-        )
-        
-        # Obtener todos los juegos aprobados
+        # ESTADÍSTICAS GENERALES (más compactas)
         all_games = []
         for user in ranked_users:
             games = await Game.get_by_user(user.discord_id, status='APPROVED')
@@ -407,24 +385,52 @@ class Ranking(commands.Cog):
         total_points = sum(user.total_points for user in ranked_users)
         total_platinos = sum(1 for game in all_games if game.has_platinum)
         total_recompletados = sum(1 for game in all_games if game.is_recompleted)
+        promedio = round(total_games / len(ranked_users), 1) if ranked_users else 0
         
-        # Stats generales
         stats_text = (
-            f"🎮 **Total de juegos:** {total_games}\n"
-            f"💰 **Puntos totales:** {total_points}\n"
-            f"🏆 **Platinos:** {total_platinos}\n"
-            f"🔄 **Re-completados:** {total_recompletados}\n"
-            f"👥 **Participantes:** {len(ranked_users)}\n"
-            f"📈 **Promedio:** {round(total_games / len(ranked_users), 1)} juegos/persona"
+            f"🎮 **{total_games}** juegos totales\n"
+            f"💰 **{total_points}** puntos totales\n"
+            f"🏆 **{total_platinos}** platinos\n"
+            f"🔄 **{total_recompletados}** re-completados\n"
+            f"📊 **{promedio}** juegos/persona"
         )
         
-        embed2.add_field(
-            name="📋 Resumen General",
+        embed1.add_field(
+            name="📈 RESUMEN GENERAL",
             value=stats_text,
-            inline=False
+            inline=True
         )
         
-        # Distribución por categoría
+        # RÉCORDS (compacto)
+        most_games = max(ranked_users, key=lambda x: x.total_games)
+        most_points = max(ranked_users, key=lambda x: x.total_points)
+        
+        records_text = (
+            f"🎮 Más juegos:\n**{most_games.username}** ({most_games.total_games})\n\n"
+            f"💰 Más puntos:\n**{most_points.username}** ({most_points.total_points})"
+        )
+        
+        embed1.add_field(
+            name="🏅 RÉCORDS",
+            value=records_text,
+            inline=True
+        )
+        
+        # PREMIOS (footer del primer embed)
+        if ranked_users and ranked_users[0].is_elkie:
+            premio_footer = "🏆 Premios: 1° = $30 USD • 2° = $20 USD (Regla Elkie activa)"
+        else:
+            premio_footer = "🏆 Premio: 1er lugar = $30 USD"
+        
+        embed1.set_footer(text=premio_footer)
+        
+        # ==================== EMBED 2: DISTRIBUCIÓN Y PROGRESO ====================
+        embed2 = discord.Embed(
+            title="📊 ANÁLISIS DETALLADO",
+            color=config.COLORES['aprobado']
+        )
+        
+        # DISTRIBUCIÓN POR CATEGORÍA (barras limpias)
         categories = {}
         platforms = {}
         
@@ -432,150 +438,73 @@ class Ranking(commands.Cog):
             categories[game.category] = categories.get(game.category, 0) + 1
             platforms[game.platform] = platforms.get(game.platform, 0) + 1
         
-        # Por categoría
         if categories:
             cat_text = ""
             sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
             for cat, count in sorted_cats:
                 emoji = config.EMOJIS.get(cat.lower(), '🎮')
                 percentage = round((count / total_games) * 100)
-                bar = "█" * (percentage // 10) + "░" * (10 - percentage // 10)
+                filled = percentage // 10
+                bar = "▰" * filled + "▱" * (10 - filled)
                 cat_text += f"{emoji} {cat}: {bar} {percentage}% ({count})\n"
             
             embed2.add_field(
-                name="🎯 Distribución por Categoría",
+                name="🎯 Por Categoría",
                 value=cat_text,
                 inline=False
             )
         
-        # Por plataforma
+        # DISTRIBUCIÓN POR PLATAFORMA
         if platforms:
             plat_text = ""
             sorted_plats = sorted(platforms.items(), key=lambda x: x[1], reverse=True)
             for plat, count in sorted_plats:
                 emoji = config.EMOJIS.get(plat.lower(), '🎮')
                 percentage = round((count / total_games) * 100)
-                bar = "█" * (percentage // 10) + "░" * (10 - percentage // 10)
+                filled = percentage // 10
+                bar = "▰" * filled + "▱" * (10 - filled)
                 plat_text += f"{emoji} {plat}: {bar} {percentage}% ({count})\n"
             
             embed2.add_field(
-                name="💻 Distribución por Plataforma",
+                name="💻 Por Plataforma",
                 value=plat_text,
                 inline=False
             )
         
-        # ==================== EMBED 3: RÉCORDS Y CURIOSIDADES ====================
-        embed3 = discord.Embed(
-            title="🏅 RÉCORDS Y DESTACADOS",
-            color=config.COLORES['info']
-        )
-        
-        # Usuario con más juegos
-        most_games_user = max(ranked_users, key=lambda x: x.total_games)
-        embed3.add_field(
-            name="🎮 Más Juegos Completados",
-            value=f"**{most_games_user.username}** - {most_games_user.total_games} juegos",
-            inline=True
-        )
-        
-        # Usuario con más puntos
-        most_points_user = max(ranked_users, key=lambda x: x.total_points)
-        embed3.add_field(
-            name="💰 Más Puntos",
-            value=f"**{most_points_user.username}** - {most_points_user.total_points} pts",
-            inline=True
-        )
-        
-        # Usuario con más platinos
-        platinos_por_usuario = {}
-        for user in ranked_users:
-            user_games = await Game.get_by_user(user.discord_id, status='APPROVED')
-            platinos_por_usuario[user.username] = sum(1 for g in user_games if g.has_platinum)
-        
-        if platinos_por_usuario:
-            most_platinos_user = max(platinos_por_usuario.items(), key=lambda x: x[1])
-            if most_platinos_user[1] > 0:
-                embed3.add_field(
-                    name="🏆 Cazador de Platinos",
-                    value=f"**{most_platinos_user[0]}** - {most_platinos_user[1]} platinos",
-                    inline=True
-                )
-        
-        # Mejor promedio puntos/juego
-        best_avg_user = max(ranked_users, key=lambda x: x.total_points / x.total_games if x.total_games > 0 else 0)
-        avg = round(best_avg_user.total_points / best_avg_user.total_games, 1) if best_avg_user.total_games > 0 else 0
-        embed3.add_field(
-            name="📈 Mejor Promedio",
-            value=f"**{best_avg_user.username}** - {avg} pts/juego",
-            inline=True
-        )
-        
-        # Juego más jugado
-        game_counts = {}
-        for game in all_games:
-            game_counts[game.game_name] = game_counts.get(game.game_name, 0) + 1
-        
-        if game_counts:
-            most_played = max(game_counts.items(), key=lambda x: x[1])
-            if most_played[1] > 1:
-                embed3.add_field(
-                    name="🔥 Juego Más Popular",
-                    value=f"**{most_played[0]}** ({most_played[1]} personas lo completaron)",
-                    inline=False
-                )
-        
-        # ==================== EMBED 4: PROGRESO TEMPORAL ====================
-        embed4 = discord.Embed(
-            title=f"{config.EMOJIS['fecha']} PROGRESO DEL CONCURSO",
-            color=config.COLORES['info']
-        )
-        
-        # Calcular días transcurridos y restantes
+        # PROGRESO TEMPORAL (compacto)
         from datetime import datetime
         now = datetime.now()
-        days_passed = (now - config.CONTEST_START_DATE).days
+        days_passed = max(1, (now - config.CONTEST_START_DATE).days)
         days_total = (config.CONTEST_END_DATE - config.CONTEST_START_DATE).days
         days_remaining = (config.CONTEST_END_DATE - now).days
         
         progress_pct = round((days_passed / days_total) * 100) if days_total > 0 else 0
-        progress_bar = "█" * (progress_pct // 5) + "░" * (20 - progress_pct // 5)
+        filled = progress_pct // 10
+        progress_bar = "▰" * filled + "▱" * (10 - filled)
+        
+        # Proyección
+        rate_per_day = total_games / days_passed
+        projected_total = round(rate_per_day * days_total)
         
         tiempo_text = (
-            f"📅 **Inicio:** {config.CONTEST_START_DATE.strftime('%d/%m/%Y')}\n"
-            f"📅 **Fin:** {config.CONTEST_END_DATE.strftime('%d/%m/%Y')}\n\n"
-            f"⏰ **Progreso:** {progress_bar} {progress_pct}%\n"
-            f"✅ **Días transcurridos:** {days_passed} días\n"
-            f"⏳ **Días restantes:** {days_remaining} días"
+            f"⏰ {progress_bar} **{progress_pct}%**\n\n"
+            f"📅 Días transcurridos: **{days_passed}**\n"
+            f"⏳ Días restantes: **{days_remaining}**\n\n"
+            f"📈 Ritmo: **{round(rate_per_day, 2)}** juegos/día\n"
+            f"🎯 Proyección final: **~{projected_total}** juegos"
         )
         
-        embed4.add_field(
-            name="📊 Línea de Tiempo",
+        embed2.add_field(
+            name="📆 PROGRESO DEL CONCURSO",
             value=tiempo_text,
             inline=False
         )
         
-        # Proyección
-        if days_passed > 0:
-            rate_per_day = total_games / days_passed
-            projected_total = round(rate_per_day * days_total)
-            
-            projection_text = (
-                f"📈 **Ritmo actual:** {round(rate_per_day, 2)} juegos/día\n"
-                f"🎯 **Proyección final:** ~{projected_total} juegos totales\n"
-                f"💡 **Por persona:** ~{round(projected_total / len(ranked_users), 1)} juegos c/u"
-            )
-            
-            embed4.add_field(
-                name="🔮 Proyección",
-                value=projection_text,
-                inline=False
-            )
+        # Footer con fecha
+        embed2.set_footer(text=f"Actualizado: {now.strftime('%d/%m/%Y %H:%M')}")
         
-        # Footer con última actualización
-        embed4.set_footer(text=f"Última actualización: {now.strftime('%d/%m/%Y %H:%M')}")
-        
-        # Enviar todos los embeds
-        await interaction.followup.send(embeds=[embed1, embed2, embed3, embed4])
+        # Enviar ambos embeds
+        await interaction.followup.send(embeds=[embed1, embed2])
 
 
 async def setup(bot):
