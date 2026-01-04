@@ -3,6 +3,7 @@ import config
 from typing import List, Dict, Optional
 
 class RAWGClient:
+    
     """Cliente para interactuar con la API de RAWG"""
     
     def __init__(self):
@@ -40,10 +41,7 @@ class RAWGClient:
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'ordering': '-added',
-                'exclude_additions': 'false',
-                'search_precise': 'true'
-
+                'ordering': '-added'
             }
             
             response = requests.get(
@@ -114,6 +112,15 @@ class RAWGClient:
                             break
                     
                     return score
+                
+                strong_matches = []
+                weak_matches = []
+                
+            for game in formatted_results:
+                if self._is_strong_name_match(query, game['name']):
+                    strong_matches.append(game) 
+                else:
+                    weak_matches.append(game)
                 
                 formatted_results.sort(key=get_smart_score, reverse=True)
                 
@@ -327,6 +334,7 @@ class RAWGClient:
         except Exception as e:
             print(f'Error detectando categoría: {e}')
             return 'Aa'
+        
     
     def has_platform(self, game_platforms: List[str], target_platform: str) -> bool:
         """Verifica si un juego está disponible en la plataforma especificada"""
@@ -337,6 +345,53 @@ class RAWGClient:
             return 'Steam' in game_platforms
         
         return False
+    
+def _normalize_text(self, text: str) -> str:
+    """Normaliza texto para comparación"""
+    if not text:
+        return ''
 
+    return (
+        text.lower()
+        .replace('™', '')
+        .replace('®', '')
+        .replace(':', '')
+        .replace('-', ' ')
+        .replace('.', '')
+        .replace('part i', 'part 1')
+        .replace('part ii', 'part 2')
+        .replace('part iii', 'part 3')
+        .replace('remake', '')
+        .replace('remastered', '')
+        .replace('edition', '')
+        .strip()
+    )
+
+
+def _is_strong_name_match(self, query: str, game_name: str) -> bool:
+    """Verifica si el nombre del juego coincide fuertemente con la búsqueda"""
+    q = self._normalize_text(query)
+    name = self._normalize_text(game_name)
+
+    if not q or not name:
+        return False
+
+    # Coincidencia directa
+    if q in name or name in q:
+        return True
+
+    # Coincidencia por palabras clave (>= 60%)
+    q_words = set(q.split())
+    name_words = set(name.split())
+
+    if not q_words:
+        return False
+
+    common = q_words.intersection(name_words)
+    similarity = len(common) / len(q_words)
+
+    return similarity >= 0.6
+    
+    
 # Instancia global del cliente
 rawg_client = RAWGClient()
