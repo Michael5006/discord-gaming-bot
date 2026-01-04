@@ -3,7 +3,6 @@ import config
 from typing import List, Dict, Optional
 
 class RAWGClient:
-    
     """Cliente para interactuar con la API de RAWG"""
     
     def __init__(self):
@@ -37,11 +36,12 @@ class RAWGClient:
             return self.cache[cache_key]
         
         try:
+            # Buscar SIN filtro de plataformas primero (para no perder resultados)
             params = {
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'ordering': '-added'
+                'exclude_additions': 'true'
             }
             
             response = requests.get(
@@ -56,19 +56,29 @@ class RAWGClient:
                 
                 # Filtrar y formatear resultados
                 formatted_results = []
-                seen_names = set()
+                seen_ids = set()
                 
                 for game in results:
+                    game_id = game.get('id')
+                    if game_id in seen_ids:
+                        continue
+                    
                     formatted_game = self._format_game(game)
-                    if formatted_game:
-                        # Evitar duplicados y sin año
-                        game_key = f"{formatted_game['name'].lower()}_{formatted_game['year']}"
-                        
-                        if game_key not in seen_names and formatted_game['year'] != 'Unknown':
-                            seen_names.add(game_key)
-                            formatted_results.append(formatted_game)
+                    if formatted_game and formatted_game['year'] != 'Unknown':
+                        seen_ids.add(game_id)
+                        formatted_results.append(formatted_game)
                 
-                # Ordenar por score inteligente
+                # Separar en coincidencias fuertes y débiles
+                strong_matches = []
+                weak_matches = []
+                
+                for game in formatted_results:
+                    if self._is_strong_name_match(query, game['name']):
+                        strong_matches.append(game)
+                    else:
+                        weak_matches.append(game)
+                
+                # Ordenar cada grupo por score
                 def get_smart_score(game):
                     added = game.get('added', 0)
                     metacritic = game.get('metacritic', 0)
@@ -76,10 +86,10 @@ class RAWGClient:
                     year = int(year_str) if year_str.isdigit() else 0
                     name = game.get('name', '').lower()
                     
-                    # Score base: popularidad (más peso)
+                    # Score base: popularidad
                     score = added * 2
                     
-                    # Bonus por metacritic alto (verificar que no sea None)
+                    # Bonus por metacritic alto
                     if metacritic and metacritic >= 90:
                         score += 50000
                     elif metacritic and metacritic >= 80:
@@ -94,7 +104,7 @@ class RAWGClient:
                         score += 10000
                     
                     # Bonus GRANDE si el nombre contiene términos importantes
-                    important_terms = ['remake', 'remastered', 'part ii', 'part 2']
+                    important_terms = ['remake', 'remastered', 'part ii', 'part 2', 'part i', 'part 1']
                     for term in important_terms:
                         if term in name:
                             score += 100000
@@ -113,16 +123,11 @@ class RAWGClient:
                     
                     return score
                 
-                strong_matches = []
-                weak_matches = []
+                strong_matches.sort(key=get_smart_score, reverse=True)
+                weak_matches.sort(key=get_smart_score, reverse=True)
                 
-            for game in formatted_results:
-                if self._is_strong_name_match(query, game['name']):
-                    strong_matches.append(game) 
-                else:
-                    weak_matches.append(game)
-                
-                formatted_results.sort(key=get_smart_score, reverse=True)
+                # Combinar: fuertes primero, débiles después
+                formatted_results = strong_matches + weak_matches
                 
                 # Limitar resultados
                 formatted_results = formatted_results[:limit]
@@ -173,6 +178,7 @@ class RAWGClient:
             platforms_data = game.get('platforms', [])
             platforms = []
             has_ps5 = False
+            has_ps4 = False
             has_steam = False
             
             for p in platforms_data:
@@ -180,17 +186,24 @@ class RAWGClient:
                 platform_name = platform_info.get('name', '')
                 
                 if 'PlayStation 5' in platform_name:
-                    platforms.append('PS5')
                     has_ps5 = True
+                elif 'PlayStation 4' in platform_name:
+                    has_ps4 = True
                 elif 'PC' in platform_name:
-                    platforms.append('Steam')
                     has_steam = True
-                elif 'PlayStation 4' in platform_name and not has_ps5:
-                    platforms.append('PS4')
             
-            # Solo incluir si tiene PS5 o Steam
-            if not (has_ps5 or has_steam):
-                return None
+            # Construir lista de plataformas disponibles
+            if has_ps5:
+                platforms.append('PS5')
+            if has_ps4 and not has_ps5:  # Solo mostrar PS4 si no tiene PS5
+                platforms.append('PS4')
+            if has_steam:
+                platforms.append('Steam')
+            
+            # IMPORTANTE: NO filtrar por plataforma aquí
+            # Dejar que todos los juegos pasen, el filtro se hará al registrar
+            if not platforms:
+                return None  # Solo excluir si NO tiene ninguna plataforma
             
             # Metacritic
             metacritic = game.get('metacritic', 0)
@@ -211,7 +224,7 @@ class RAWGClient:
                 'platforms': platforms,
                 'category': category,
                 'metacritic': metacritic,
-                'added': added,  # <- NUEVO
+                'added': added,
                 'image': background_image
             }
             
@@ -241,11 +254,10 @@ class RAWGClient:
             
             # Obtener rating (cantidad de reviews)
             ratings_count = game.get('ratings_count', 0)
-            added = game.get('added', 0)  # Cuánta gente lo agregó
+            added = game.get('added', 0)
             
-            # FRANCHISES AAA CONOCIDAS (esto es clave)
+            # FRANCHISES AAA CONOCIDAS
             aaa_franchises = [
-                'remake', 'remaster', 'part i', 'part 1',
                 'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
                 'horizon', 'ghost of tsushima', 'spider-man', 'spiderman',
                 'call of duty', 'battlefield', 'assassin', 'far cry', 'watch dogs',
@@ -260,7 +272,7 @@ class RAWGClient:
                 'dark souls', 'elden ring', 'bloodborne', 'sekiro',
                 'monster hunter', 'street fighter', 'mortal kombat', 'tekken',
                 'persona', 'yakuza', 'judgment', 'kingdom hearts',
-                'batman arkham', 'mortal kombat', 'injustice', 'lego'
+                'batman arkham', 'injustice', 'lego'
             ]
             
             # Verificar si es una franchise AAA
@@ -314,7 +326,7 @@ class RAWGClient:
             if metacritic and metacritic >= 75 and added > 30000:
                 is_aaa = True
             
-            # 5. Muy popular (más de 100k personas lo agregaron)
+            # 5. Muy popular
             if added > 100000:
                 is_aaa = True
             
@@ -334,7 +346,48 @@ class RAWGClient:
         except Exception as e:
             print(f'Error detectando categoría: {e}')
             return 'Aa'
+    
+    def _normalize_text(self, text: str) -> str:
+        """Normaliza texto para comparación"""
+        if not text:
+            return ''
         
+        return (
+            text.lower()
+            .replace('™', '')
+            .replace('®', '')
+            .replace(':', '')
+            .replace('-', ' ')
+            .replace('.', '')
+            .replace('part i', 'part 1')
+            .replace('part ii', 'part 2')
+            .replace('part iii', 'part 3')
+            .strip()
+        )
+    
+    def _is_strong_name_match(self, query: str, game_name: str) -> bool:
+        """Verifica si el nombre del juego coincide fuertemente con la búsqueda"""
+        q = self._normalize_text(query)
+        name = self._normalize_text(game_name)
+        
+        if not q or not name:
+            return False
+        
+        # Coincidencia directa
+        if q in name or name in q:
+            return True
+        
+        # Coincidencia por palabras clave (>= 60%)
+        q_words = set(q.split())
+        name_words = set(name.split())
+        
+        if not q_words:
+            return False
+        
+        common = q_words.intersection(name_words)
+        similarity = len(common) / len(q_words)
+        
+        return similarity >= 0.6
     
     def has_platform(self, game_platforms: List[str], target_platform: str) -> bool:
         """Verifica si un juego está disponible en la plataforma especificada"""
@@ -345,53 +398,6 @@ class RAWGClient:
             return 'Steam' in game_platforms
         
         return False
-    
-def _normalize_text(self, text: str) -> str:
-    """Normaliza texto para comparación"""
-    if not text:
-        return ''
 
-    return (
-        text.lower()
-        .replace('™', '')
-        .replace('®', '')
-        .replace(':', '')
-        .replace('-', ' ')
-        .replace('.', '')
-        .replace('part i', 'part 1')
-        .replace('part ii', 'part 2')
-        .replace('part iii', 'part 3')
-        .replace('remake', '')
-        .replace('remastered', '')
-        .replace('edition', '')
-        .strip()
-    )
-
-
-def _is_strong_name_match(self, query: str, game_name: str) -> bool:
-    """Verifica si el nombre del juego coincide fuertemente con la búsqueda"""
-    q = self._normalize_text(query)
-    name = self._normalize_text(game_name)
-
-    if not q or not name:
-        return False
-
-    # Coincidencia directa
-    if q in name or name in q:
-        return True
-
-    # Coincidencia por palabras clave (>= 60%)
-    q_words = set(q.split())
-    name_words = set(name.split())
-
-    if not q_words:
-        return False
-
-    common = q_words.intersection(name_words)
-    similarity = len(common) / len(q_words)
-
-    return similarity >= 0.6
-    
-    
 # Instancia global del cliente
 rawg_client = RAWGClient()
