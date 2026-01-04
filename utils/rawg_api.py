@@ -41,7 +41,7 @@ class RAWGClient:
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'exclude_additions': 'true'
+                'exclude_additions': 'false'
             }
             
             response = requests.get(
@@ -124,7 +124,6 @@ class RAWGClient:
         
         # Remover sufijos comunes
         suffixes_to_remove = [
-            'remake', 'remastered', 'remaster', 'definitive edition',
             'game of the year', 'goty', 'complete edition', 'deluxe',
             'ultimate edition', 'enhanced edition', 'special edition',
             'directors cut', "director's cut", 'gold edition'
@@ -150,7 +149,11 @@ class RAWGClient:
         max_added = max((game.get('added') or 0) for game in games)
         max_metacritic = max((game.get('metacritic') or 0) for game in games)
         
-        score = max_added * 2
+        score = max_added * 0.5
+        
+        #Busqueda Exacta
+        if query.lower() in base_name.lower():
+            score += 100000
         
         #Normalizar meta
         if max_metacritic is None:
