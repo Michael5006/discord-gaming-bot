@@ -152,6 +152,10 @@ class RAWGClient:
         
         score = max_added * 2
         
+        #Normalizar meta
+        if max_metacritic is None:
+            max_metacritic = 0
+        
         # Bonus por metacritic alto
         if max_metacritic >= 90:
             score += 50000
