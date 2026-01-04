@@ -40,8 +40,10 @@ class RAWGClient:
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'platforms': '187,4,18',  # PS5=187, PC=4, PS4=18
-                'exclude_additions': 'true'
+                'ordering': '-added',
+                'exclude_additions': 'false',
+                'search_precise': 'true'
+
             }
             
             response = requests.get(
