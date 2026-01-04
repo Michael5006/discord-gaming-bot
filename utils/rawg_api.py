@@ -28,7 +28,7 @@ class RAWGClient:
         ]
     
     def search_games(self, query: str, limit: int = 25) -> List[Dict]:
-        """Busca juegos por nombre"""
+        """Busca juegos por nombre con agrupación inteligente"""
         
         # Verificar caché
         cache_key = f"search_{query.lower()}"
@@ -36,7 +36,7 @@ class RAWGClient:
             return self.cache[cache_key]
         
         try:
-            # Buscar SIN filtro de plataformas primero (para no perder resultados)
+            # Buscar SIN filtro de plataformas
             params = {
                 'key': self.api_key,
                 'search': query,
@@ -68,80 +68,145 @@ class RAWGClient:
                         seen_ids.add(game_id)
                         formatted_results.append(formatted_game)
                 
-                # Separar en coincidencias fuertes y débiles
-                strong_matches = []
-                weak_matches = []
-                
+                # PASO 1: Agrupar por nombre base
+                groups = {}
                 for game in formatted_results:
-                    if self._is_strong_name_match(query, game['name']):
-                        strong_matches.append(game)
-                    else:
-                        weak_matches.append(game)
+                    base_name = self._get_base_name(game['name'])
+                    if base_name not in groups:
+                        groups[base_name] = []
+                    groups[base_name].append(game)
                 
-                # Ordenar cada grupo por score
-                def get_smart_score(game):
-                    added = game.get('added', 0)
-                    metacritic = game.get('metacritic', 0)
-                    year_str = game.get('year', '0')
-                    year = int(year_str) if year_str.isdigit() else 0
-                    name = game.get('name', '').lower()
-                    
-                    # Score base: popularidad
-                    score = added * 2
-                    
-                    # Bonus por metacritic alto
-                    if metacritic and metacritic >= 90:
-                        score += 50000
-                    elif metacritic and metacritic >= 80:
-                        score += 30000
-                    elif metacritic and metacritic >= 70:
-                        score += 10000
-                    
-                    # Bonus por juegos recientes
-                    if year >= 2020:
-                        score += 20000
-                    elif year >= 2015:
-                        score += 10000
-                    
-                    # Bonus GRANDE si el nombre contiene términos importantes
-                    important_terms = ['remake', 'remastered', 'part ii', 'part 2', 'part i', 'part 1']
-                    for term in important_terms:
-                        if term in name:
-                            score += 100000
-                            break
-                    
-                    # Bonus si es de franchise AAA conocida
-                    aaa_terms = [
-                        'resident evil', 'the last of us', 'god of war', 
-                        'uncharted', 'halo', 'gears', 'grand theft',
-                        'red dead', 'call of duty', 'assassin'
-                    ]
-                    for term in aaa_terms:
-                        if term in name:
-                            score += 50000
-                            break
-                    
-                    return score
+                # PASO 2: Calcular score de cada grupo
+                query_normalized = self._normalize_text(query)
+                group_scores = []
                 
-                strong_matches.sort(key=get_smart_score, reverse=True)
-                weak_matches.sort(key=get_smart_score, reverse=True)
+                for base_name, games_in_group in groups.items():
+                    # Score del grupo basado en coincidencia con búsqueda
+                    group_match_score = self._get_group_match_score(query_normalized, base_name, games_in_group)
+                    
+                    # Ordenar juegos DENTRO del grupo (más reciente primero)
+                    games_in_group.sort(key=lambda g: (
+                        int(g['year']) if g['year'].isdigit() else 0,
+                        g.get('added', 0)
+                    ), reverse=True)
+                    
+                    group_scores.append({
+                        'base_name': base_name,
+                        'games': games_in_group,
+                        'score': group_match_score
+                    })
                 
-                # Combinar: fuertes primero, débiles después
-                formatted_results = strong_matches + weak_matches
+                # PASO 3: Ordenar grupos por score
+                group_scores.sort(key=lambda x: x['score'], reverse=True)
+                
+                # PASO 4: Aplanar grupos de vuelta a lista
+                final_results = []
+                for group in group_scores:
+                    final_results.extend(group['games'])
                 
                 # Limitar resultados
-                formatted_results = formatted_results[:limit]
+                final_results = final_results[:limit]
                 
                 # Guardar en caché
-                self.cache[cache_key] = formatted_results
+                self.cache[cache_key] = final_results
                 
-                return formatted_results
+                return final_results
             
             return []
             
         except Exception as e:
             print(f'Error buscando juegos en RAWG: {e}')
             return []
+    
+    def _get_base_name(self, name: str) -> str:
+        """Extrae el nombre base del juego (sin año, remake, etc.)"""
+        base = name.lower()
+        
+        # Remover sufijos comunes
+        suffixes_to_remove = [
+            'remake', 'remastered', 'remaster', 'definitive edition',
+            'game of the year', 'goty', 'complete edition', 'deluxe',
+            'ultimate edition', 'enhanced edition', 'special edition',
+            'directors cut', "director's cut", 'gold edition'
+        ]
+        
+        for suffix in suffixes_to_remove:
+            base = base.replace(suffix, '')
+        
+        # Remover años entre paréntesis: (2023), (2005)
+        import re
+        base = re.sub(r'\(\d{4}\)', '', base)
+        
+        # Remover símbolos y espacios extras
+        base = base.replace('™', '').replace('®', '').replace(':', '').strip()
+        base = re.sub(r'\s+', ' ', base)  # Múltiples espacios a uno solo
+        
+        return base
+    
+    def _get_group_match_score(self, query: str, base_name: str, games: List[Dict]) -> int:
+        """Calcula el score de un grupo de juegos"""
+        
+        # Score base: popularidad del juego más popular del grupo
+        max_added = max(game.get('added', 0) for game in games)
+        max_metacritic = max(game.get('metacritic', 0) for game in games)
+        
+        score = max_added * 2
+        
+        # Bonus por metacritic alto
+        if max_metacritic >= 90:
+            score += 50000
+        elif max_metacritic >= 80:
+            score += 30000
+        elif max_metacritic >= 70:
+            score += 10000
+        
+        # BONUS MASIVO por coincidencia exacta o muy cercana
+        query_words = set(query.split())
+        base_words = set(base_name.split())
+        
+        if not query_words:
+            return score
+        
+        # Coincidencia perfecta
+        if query == base_name:
+            score += 500000  # MEGA BONUS
+        # Coincidencia muy alta (>= 80%)
+        elif query_words.issubset(base_words) or base_words.issubset(query_words):
+            score += 300000
+        else:
+            # Coincidencia parcial
+            common = query_words.intersection(base_words)
+            similarity = len(common) / len(query_words)
+            
+            if similarity >= 0.8:
+                score += 200000
+            elif similarity >= 0.6:
+                score += 100000
+            elif similarity >= 0.4:
+                score += 50000
+        
+        # Bonus si es franchise AAA conocida
+        aaa_terms = [
+            'resident evil', 'the last of us', 'god of war', 
+            'uncharted', 'halo', 'grand theft auto', 'red dead',
+            'call of duty', 'assassin', 'final fantasy'
+        ]
+        
+        for term in aaa_terms:
+            if term in base_name:
+                score += 30000
+                break
+        
+        # Bonus por juegos recientes en el grupo
+        has_recent = any(
+            int(game['year']) >= 2020 if game['year'].isdigit() else False 
+            for game in games
+        )
+        
+        if has_recent:
+            score += 20000
+        
+        return score
     
     def get_game_details(self, game_id: int) -> Optional[Dict]:
         """Obtiene detalles completos de un juego"""
