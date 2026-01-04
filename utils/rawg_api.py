@@ -147,8 +147,8 @@ class RAWGClient:
         """Calcula el score de un grupo de juegos"""
         
         # Score base: popularidad del juego más popular del grupo
-        max_added = max(game.get('added', 0) for game in games)
-        max_metacritic = max(game.get('metacritic', 0) for game in games)
+        max_added = max((game.get('added') or 0) for game in games)
+        max_metacritic = max((game.get('metacritic') or 0) for game in games)
         
         score = max_added * 2
         
