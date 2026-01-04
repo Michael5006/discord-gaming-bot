@@ -28,7 +28,7 @@ class RAWGClient:
         ]
     
     def search_games(self, query: str, limit: int = 25) -> List[Dict]:
-        """Busca juegos por nombre con mejor ordenamiento"""
+        """Busca juegos por nombre"""
         
         # Verificar caché
         cache_key = f"search_{query.lower()}"
@@ -36,35 +36,12 @@ class RAWGClient:
             return self.cache[cache_key]
         
         try:
-            # BÚSQUEDA 1: Búsqueda exacta/precisa
-            params_exact = {
-                'key': self.api_key,
-                'search_exact': 'true',  # Búsqueda exacta
-                'search': query,
-                'page_size': 10,
-                'platforms': '187,4,18',
-                'exclude_additions': 'true',
-            }
-            
-            response_exact = requests.get(
-                f'{self.base_url}/games',
-                params=params_exact,
-                timeout=5
-            )
-            
-            exact_results = []
-            if response_exact.status_code == 200:
-                data = response_exact.json()
-                exact_results = data.get('results', [])
-            
-            # BÚSQUEDA 2: Búsqueda normal
             params = {
                 'key': self.api_key,
                 'search': query,
-                'page_size': 40,  # Más resultados
-                'platforms': '187,4,18',
-                'exclude_additions': 'true',
-                'ordering': '-added'  # Por popularidad
+                'page_size': 40,
+                'platforms': '187,4,18',  # PS5=187, PC=4, PS4=18
+                'exclude_additions': 'true'
             }
             
             response = requests.get(
@@ -73,54 +50,80 @@ class RAWGClient:
                 timeout=5
             )
             
-            normal_results = []
             if response.status_code == 200:
                 data = response.json()
-                normal_results = data.get('results', [])
-            
-            # Combinar resultados: exactos primero, luego normales
-            all_results = exact_results + normal_results
-            
-            # Filtrar y formatear
-            formatted_results = []
-            seen_ids = set()
-            
-            for game in all_results:
-                game_id = game.get('id')
-                if game_id in seen_ids:
-                    continue
+                results = data.get('results', [])
                 
-                formatted_game = self._format_game(game)
-                if formatted_game and formatted_game['year'] != 'Unknown':
-                    seen_ids.add(game_id)
-                    formatted_results.append(formatted_game)
-            
-            # Ordenar por score combinado
-            def get_priority_score(game):
-                added = game.get('added', 0)
-                metacritic = game.get('metacritic', 0)
-                year = int(game.get('year', 0)) if game.get('year', '').isdigit() else 0
+                # Filtrar y formatear resultados
+                formatted_results = []
+                seen_names = set()
                 
-                # Score base por popularidad (peso mayor)
-                popularity_score = added
+                for game in results:
+                    formatted_game = self._format_game(game)
+                    if formatted_game:
+                        # Evitar duplicados y sin año
+                        game_key = f"{formatted_game['name'].lower()}_{formatted_game['year']}"
+                        
+                        if game_key not in seen_names and formatted_game['year'] != 'Unknown':
+                            seen_names.add(game_key)
+                            formatted_results.append(formatted_game)
                 
-                # Bonus por metacritic alto
-                quality_bonus = metacritic * 1000 if metacritic >= 80 else metacritic * 500
+                # Ordenar por score inteligente
+                def get_smart_score(game):
+                    added = game.get('added', 0)
+                    metacritic = game.get('metacritic', 0)
+                    year_str = game.get('year', '0')
+                    year = int(year_str) if year_str.isdigit() else 0
+                    name = game.get('name', '').lower()
+                    
+                    # Score base: popularidad (más peso)
+                    score = added * 2
+                    
+                    # Bonus por metacritic alto
+                    if metacritic >= 90:
+                        score += 50000
+                    elif metacritic >= 80:
+                        score += 30000
+                    elif metacritic >= 70:
+                        score += 10000
+                    
+                    # Bonus por juegos recientes
+                    if year >= 2020:
+                        score += 20000
+                    elif year >= 2015:
+                        score += 10000
+                    
+                    # Bonus GRANDE si el nombre contiene términos importantes
+                    important_terms = ['remake', 'remastered', 'part ii', 'part 2']
+                    for term in important_terms:
+                        if term in name:
+                            score += 100000
+                            break
+                    
+                    # Bonus si es de franchise AAA conocida
+                    aaa_terms = [
+                        'resident evil', 'the last of us', 'god of war', 
+                        'uncharted', 'halo', 'gears', 'grand theft',
+                        'red dead', 'call of duty', 'assassin'
+                    ]
+                    for term in aaa_terms:
+                        if term in name:
+                            score += 50000
+                            break
+                    
+                    return score
                 
-                # Bonus por juegos recientes (2015+)
-                recency_bonus = (year - 2000) * 1000 if year >= 2015 else 0
+                formatted_results.sort(key=get_smart_score, reverse=True)
                 
-                return popularity_score + quality_bonus + recency_bonus
+                # Limitar resultados
+                formatted_results = formatted_results[:limit]
+                
+                # Guardar en caché
+                self.cache[cache_key] = formatted_results
+                
+                return formatted_results
             
-            formatted_results.sort(key=get_priority_score, reverse=True)
-            
-            # Limitar a los mejores resultados
-            formatted_results = formatted_results[:limit]
-            
-            # Guardar en caché
-            self.cache[cache_key] = formatted_results
-            
-            return formatted_results
+            return []
             
         except Exception as e:
             print(f'Error buscando juegos en RAWG: {e}')
