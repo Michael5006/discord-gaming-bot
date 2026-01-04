@@ -13,24 +13,17 @@ class Games(commands.Cog):
     
     @app_commands.command(name="registrar", description="Registrar un juego completado")
     @app_commands.describe(
-        nombre="Nombre del juego",
-        categoria="Categoría del juego",
-        plataforma="Plataforma donde lo jugaste",
+        nombre="Busca el juego por nombre",
+        plataforma="Plataforma en la que lo jugaste",
         platino="¿Obtuviste el platino/100%?",
         recompletado="¿Es un juego que ya habías completado antes?"
     )
-    @app_commands.choices(categoria=[
-        app_commands.Choice(name=f"{config.EMOJIS['retro']} Retro (1 punto)", value="retro"),
-        app_commands.Choice(name=f"{config.EMOJIS['indie']} Indie (1 punto)", value="indie"),
-        app_commands.Choice(name=f"{config.EMOJIS['aa']} AA (2 puntos)", value="aa"),
-        app_commands.Choice(name=f"{config.EMOJIS['aaa']} AAA (3 puntos)", value="aaa"),
-    ])
     @app_commands.choices(plataforma=[
         app_commands.Choice(name=f"{config.EMOJIS['ps5']} PlayStation 5", value="PS5"),
         app_commands.Choice(name=f"{config.EMOJIS['steam']} Steam", value="Steam"),
     ])
     @app_commands.choices(platino=[
-        app_commands.Choice(name=f"{config.EMOJIS['platino']} Sí (+1 punto)", value="si"),
+        app_commands.Choice(name=f"{config.EMOJIS['platino']} Sí", value="si"),
         app_commands.Choice(name="❌ No", value="no"),
     ])
     @app_commands.choices(recompletado=[
@@ -38,291 +31,262 @@ class Games(commands.Cog):
         app_commands.Choice(name="🔄 Sí, lo re-completé", value="si"),
     ])
     async def registrar(
-        self, 
+        self,
         interaction: discord.Interaction,
         nombre: str,
-        categoria: app_commands.Choice[str],
         plataforma: app_commands.Choice[str],
         platino: app_commands.Choice[str],
         recompletado: app_commands.Choice[str]
     ):
-        """Registra un nuevo juego completado"""
+        """Registra un juego completado usando la base de datos de RAWG"""
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # El parámetro 'nombre' viene como "ID:Nombre del Juego"
+        try:
+            parts = nombre.split(':', 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                game_id = int(parts[0])
+                game_name = parts[1]
+            else:
+                # Permitir registro manual si no viene de RAWG
+                game_id = None
+                game_name = nombre
+        except:
+            game_id = None
+            game_name = nombre
+        
+        # Si viene de RAWG, obtener detalles completos
+        if game_id:
+            from utils.rawg_api import rawg_client
+            game_data = rawg_client.get_game_details(game_id)
+            
+            if not game_data:
+                embed = discord.Embed(
+                    title=f"{config.EMOJIS['error']} Error",
+                    description="No se pudo obtener información del juego.",
+                    color=config.COLORES['rechazado']
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Extraer información
+            nombre_oficial = game_data.get('name', game_name)
+            year = game_data.get('released', '').split('-')[0] if game_data.get('released') else 'Unknown'
+            
+            # Obtener plataformas
+            platforms_data = game_data.get('platforms', [])
+            available_platforms = []
+            for p in platforms_data:
+                platform_info = p.get('platform', {})
+                platform_name = platform_info.get('name', '')
+                if 'PlayStation 5' in platform_name or 'PlayStation 4' in platform_name:
+                    available_platforms.append('PS5')
+                elif 'PC' in platform_name:
+                    available_platforms.append('Steam')
+            
+            # Validar que el juego esté en la plataforma seleccionada
+            selected_platform = plataforma.value
+            if selected_platform not in available_platforms:
+                # Si seleccionó PS5 pero solo está en PS4, permitirlo
+                if selected_platform == 'PS5' and 'PS4' not in [p.get('platform', {}).get('name', '') for p in platforms_data]:
+                    embed = discord.Embed(
+                        title=f"{config.EMOJIS['advertencia']} Plataforma No Disponible",
+                        description=f"**{nombre_oficial}** no está disponible en **{selected_platform}**.",
+                        color=config.COLORES['rechazado']
+                    )
+                    embed.add_field(
+                        name="Plataformas Disponibles",
+                        value=", ".join(available_platforms) if available_platforms else "No disponible en PS5/Steam",
+                        inline=False
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+            
+            # Detectar categoría automáticamente
+            metacritic = game_data.get('metacritic', 0)
+            categoria_detectada = rawg_client._detect_category(game_data, year, metacritic)
+            
+            # Convertir a formato de la BD
+            categoria_map = {
+                'Retro': 'Retro',
+                'Indie': 'Indie',
+                'Aa': 'AA',
+                'Aaa': 'AAA'
+            }
+            categoria_nombre = categoria_map.get(categoria_detectada, 'AA')
+            
+            # Imagen del juego
+            game_image = game_data.get('background_image', '')
+            
+        else:
+            # Registro manual (fallback si no viene de RAWG)
+            nombre_oficial = game_name
+            year = 'Unknown'
+            categoria_nombre = 'AA'  # Default
+            game_image = ''
         
         # Crear/obtener usuario
         await User.get_or_create(interaction.user.id, interaction.user.name)
         
-        # Convertir valores
-        has_platinum = (platino.value == "si")
-        is_recompleted = (recompletado.value == "si")
+        # Verificar si ya tiene este juego aprobado (para detectar re-completado)
+        existing_games = await Game.get_by_user(interaction.user.id, status='APPROVED')
+        is_recompletado = recompletado.value == "si"
+        
+        # Auto-detectar re-completado
+        for existing_game in existing_games:
+            if existing_game.game_name.lower() == nombre_oficial.lower():
+                if recompletado.value == "no":
+                    # Preguntar si quiere marcarlo como re-completado
+                    is_recompletado = True
+                break
         
         # Calcular puntos
-        points = config.PUNTOS_CATEGORIA[categoria.value]
-        if has_platinum:
-            points += config.PUNTOS_CATEGORIA['platino']
+        puntos_categoria = config.PUNTOS_CATEGORIA[categoria_nombre.lower()]
+        puntos_platino = config.PUNTOS_CATEGORIA['platino'] if platino.value == "si" else 0
+        puntos_totales = puntos_categoria + puntos_platino
         
-        # Crear el juego en la BD
+        # Registrar el juego
+        has_platinum = platino.value == "si"
         success = await Game.create(
             discord_user_id=interaction.user.id,
             username=interaction.user.name,
-            game_name=nombre,
-            category=categoria.value.capitalize(),
+            game_name=nombre_oficial,
+            category=categoria_nombre,
             platform=plataforma.value,
             has_platinum=has_platinum,
-            is_recompleted=is_recompleted
+            is_recompleted=is_recompletado
         )
         
         if success:
-            # Crear embed de confirmación
+            # Embed de confirmación
             embed = discord.Embed(
                 title=f"{config.EMOJIS['exito']} ¡Juego Registrado!",
-                description=f"Tu juego ha sido enviado para aprobación.",
-                color=config.COLORES['pendiente']
+                description=f"**{nombre_oficial}** ha sido registrado exitosamente.",
+                color=config.COLORES['aprobado']
             )
             
+            if game_image:
+                embed.set_thumbnail(url=game_image)
+            
+            # Información del juego
+            categoria_emoji = config.EMOJIS.get(categoria_nombre.lower(), '🎮')
+            
+            info_text = f"{categoria_emoji} **Categoría:** {categoria_nombre}"
+            if year and year != 'Unknown':
+                info_text += f" ({year})"
+            info_text += f"\n🎮 **Plataforma:** {plataforma.value}"
+            
+            if has_platinum:
+                info_text += f"\n{config.EMOJIS['platino']} **Platino:** Sí"
+            
+            if is_recompletado:
+                info_text += f"\n🔄 **Re-completado:** Sí"
+            
             embed.add_field(
-                name=f"{config.EMOJIS['registrar']} Juego",
-                value=f"**{nombre}**",
+                name="📋 Información",
+                value=info_text,
                 inline=False
             )
             
-            # Info del juego
-            categoria_emoji = config.EMOJIS.get(categoria.value, '🎮')
-            embed.add_field(
-                name="Categoría",
-                value=f"{categoria_emoji} {categoria.value.capitalize()}",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Plataforma",
-                value=f"{config.EMOJIS.get(plataforma.value.lower(), '🎮')} {plataforma.value}",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Platino",
-                value=f"{config.EMOJIS['platino'] if has_platinum else '❌'} {'Sí' if has_platinum else 'No'}",
-                inline=True
-            )
-            
-            if is_recompleted:
-                embed.add_field(
-                    name="Tipo",
-                    value="🔄 Re-completado",
-                    inline=True
-                )
-            
             embed.add_field(
                 name=f"{config.EMOJIS['puntos']} Puntos",
-                value=f"**{points}** puntos",
+                value=f"**{puntos_totales}** puntos ({puntos_categoria} + {puntos_platino})",
                 inline=True
             )
             
             embed.add_field(
                 name=f"{config.EMOJIS['pendiente']} Estado",
-                value="⏳ **Pendiente de aprobación**",
-                inline=False
+                value="Pendiente de aprobación",
+                inline=True
             )
             
-            embed.set_footer(text="Un administrador revisará tu solicitud pronto")
+            embed.set_footer(text="Un admin revisará tu registro pronto")
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             embed = discord.Embed(
                 title=f"{config.EMOJIS['error']} Error",
-                description="Hubo un error al registrar el juego. Intenta nuevamente.",
+                description="Hubo un error al registrar el juego. Inténtalo de nuevo.",
                 color=config.COLORES['rechazado']
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="mis-juegos", description="Ver tus juegos aprobados")
-    async def mis_juegos(self, interaction: discord.Interaction):
-        """Muestra los juegos aprobados del usuario"""
-        
-        # Obtener juegos aprobados
-        games = await Game.get_by_user(interaction.user.id, status='APPROVED')
-        
-        if not games:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['info']} Mis Juegos",
-                description="Aún no tienes juegos aprobados.",
-                color=config.COLORES['info']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Obtener stats del usuario
-        user = await User.get(interaction.user.id)
-        
-        embed = discord.Embed(
-            title=f"{config.EMOJIS['registrar']} Mis Juegos Aprobados",
-            description=f"Total de juegos: **{len(games)}**\nPuntos totales: **{user.total_points}** {config.EMOJIS['puntos']}",
-            color=config.COLORES['aprobado']
-        )
-        
-        # Mostrar hasta 10 juegos
-        for i, game in enumerate(games[:10], 1):
-            categoria_emoji = config.EMOJIS.get(game.category.lower(), '🎮')
-            platino_text = f" {config.EMOJIS['platino']}" if game.has_platinum else ""
-            recompletado_text = " 🔄" if game.is_recompleted else ""
-            
-            embed.add_field(
-                name=f"{i}. {game.game_name}{platino_text}{recompletado_text}",
-                value=f"{categoria_emoji} {game.category} • {game.platform} • {game.total_points} pts\n`ID: {game.id}`",
-                inline=False
-            )
-        
-        if len(games) > 10:
-            embed.set_footer(text=f"Mostrando 10 de {len(games)} juegos")
-        
-        await interaction.response.send_message(embed=embed)
-    
-    @app_commands.command(name="mis-pendientes", description="Ver tus juegos pendientes de aprobación")
-    async def mis_pendientes(self, interaction: discord.Interaction):
-        """Muestra los juegos pendientes del usuario"""
-        
-        # Obtener juegos pendientes
-        games = await Game.get_by_user(interaction.user.id, status='PENDING')
-        
-        if not games:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['info']} Juegos Pendientes",
-                description="No tienes juegos pendientes de aprobación.",
-                color=config.COLORES['info']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title=f"{config.EMOJIS['pendiente']} Mis Juegos Pendientes",
-            description=f"Tienes **{len(games)}** juego(s) esperando aprobación.",
-            color=config.COLORES['pendiente']
-        )
-        
-        for i, game in enumerate(games, 1):
-            categoria_emoji = config.EMOJIS.get(game.category.lower(), '🎮')
-            platino_text = f" {config.EMOJIS['platino']}" if game.has_platinum else ""
-            
-            embed.add_field(
-                name=f"{i}. {game.game_name}{platino_text}",
-                value=f"{categoria_emoji} {game.category} • {game.platform} • {game.total_points} pts",
-                inline=False
-            )
-        
-        embed.set_footer(text="Los admins revisarán tus juegos pronto")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-    @app_commands.command(name="eliminar-pendiente", description="Eliminar uno de tus juegos pendientes")
-    @app_commands.describe(juego="Juego pendiente a eliminar")
-    async def eliminar_pendiente(self, interaction: discord.Interaction, juego: str):
-        """Permite a un usuario eliminar sus propios juegos pendientes"""
-        
-        # El parámetro 'juego' viene como "ID:Nombre del Juego"
-        try:
-            game_id = int(juego.split(':')[0])
-        except:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['error']} Error",
-                description="Error al procesar el juego seleccionado.",
-                color=config.COLORES['rechazado']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Obtener el juego
-        game = await Game.get_by_id(game_id)
-        
-        if not game:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['error']} Error",
-                description="No se encontró el juego.",
-                color=config.COLORES['rechazado']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Verificar que sea del usuario
-        if game.discord_user_id != interaction.user.id:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['error']} Sin Permisos",
-                description="Solo puedes eliminar tus propios juegos.",
-                color=config.COLORES['rechazado']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Verificar que esté pendiente
-        if game.status != 'PENDING':
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['advertencia']} No Disponible",
-                description="Solo puedes eliminar juegos que estén pendientes de aprobación.",
-                color=config.COLORES['info']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        # Eliminar el juego
-        from models.database import get_db
-        db = await get_db()
-        try:
-            await db.execute('DELETE FROM games WHERE id = ?', (game_id,))
-            await db.commit()
-            
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['eliminar']} Juego Eliminado",
-                description=f"**{game.game_name}** ha sido eliminado de tus pendientes.",
-                color=config.COLORES['aprobado']
-            )
-            
-            embed.add_field(
-                name="Juego Eliminado",
-                value=f"{game.game_name} - {game.category} ({game.total_points} pts)",
-                inline=False
-            )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['error']} Error",
-                description="Hubo un error al eliminar el juego.",
-                color=config.COLORES['rechazado']
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        finally:
-            await db.close()
-    
-    @eliminar_pendiente.autocomplete('juego')
-    async def eliminar_pendiente_autocomplete(
+    @registrar.autocomplete('nombre')
+    async def nombre_autocomplete(
         self,
         interaction: discord.Interaction,
         current: str,
     ) -> list[app_commands.Choice[str]]:
-        """Autocompletado para juegos pendientes del usuario"""
+        """Autocompletado dinámico de juegos desde RAWG"""
         
-        # Obtener juegos pendientes del usuario
-        games = await Game.get_by_user(interaction.user.id, status='PENDING')
+        # Necesita al menos 3 caracteres para buscar
+        if len(current) < 3:
+            return [
+                app_commands.Choice(
+                    name="Escribe al menos 3 letras para buscar...",
+                    value="0:buscar"
+                )
+            ]
+        
+        # Buscar en RAWG
+        from utils.rawg_api import rawg_client
+        games = rawg_client.search_games(current, limit=25)
         
         if not games:
-            return [app_commands.Choice(name="No tienes juegos pendientes", value="0:ninguno")]
+            return [
+                app_commands.Choice(
+                    name=f"No se encontraron juegos para '{current}'",
+                    value=f"0:{current}"
+                ),
+                app_commands.Choice(
+                    name="→ Registrar manualmente (escribe el nombre completo)",
+                    value=f"manual:{current}"
+                )
+            ]
         
-        # Filtrar por lo que está escribiendo
-        filtered_games = [
-            game for game in games
-            if current.lower() in game.game_name.lower()
-        ][:25]
-        
-        # Crear opciones
+        # Formatear opciones
         choices = []
-        for game in filtered_games:
-            platino_text = " 🏆" if game.has_platinum else ""
-            recomp_text = " 🔄" if game.is_recompleted else ""
-            choice_name = f"{game.game_name}{platino_text}{recomp_text} - {game.category} ({game.total_points}pts)"
-            choice_value = f"{game.id}:{game.game_name}"
-            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        for game in games:
+            # Crear nombre descriptivo
+            name_parts = [game['name']]
+            
+            if game['year'] and game['year'] != 'Unknown':
+                name_parts.append(f"({game['year']})")
+            
+            # Agregar categoría detectada
+            categoria_emoji = {
+                'Retro': '🕹️',
+                'Indie': '🎨',
+                'Aa': '🎯',
+                'Aaa': '👑'
+            }.get(game['category'], '🎮')
+            name_parts.append(f"{categoria_emoji}")
+            
+            # Plataformas
+            platforms_str = ", ".join(game['platforms'][:2])  # Máximo 2 plataformas
+            name_parts.append(f"[{platforms_str}]")
+            
+            choice_name = " ".join(name_parts)
+            choice_value = f"{game['id']}:{game['name']}"
+            
+            choices.append(
+                app_commands.Choice(
+                    name=choice_name[:100],  # Discord limita a 100 caracteres
+                    value=choice_value[:100]
+                )
+            )
         
-        return choices
+        # Agregar opción de registro manual al final
+        if len(choices) < 25:
+            choices.append(
+                app_commands.Choice(
+                    name="→ No está en la lista - Registrar manualmente",
+                    value=f"manual:{current}"
+                )
+            )
+        
+        return choices[:25]  # Discord limita a 25 opciones
 
 async def setup(bot):
     await bot.add_cog(Games(bot))

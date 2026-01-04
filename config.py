@@ -9,6 +9,10 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = os.getenv('GUILD_ID')
 
+# API de RAWG para búsqueda de juegos
+RAWG_API_KEY = os.getenv('RAWG_API_KEY')
+RAWG_BASE_URL = 'https://api.rawg.io/api'
+
 # Configuración del concurso
 CONTEST_START_DATE = datetime.strptime(os.getenv('CONTEST_START_DATE', '2025-12-25'), '%Y-%m-%d')
 CONTEST_END_DATE = datetime.strptime(os.getenv('CONTEST_END_DATE', '2027-01-01'), '%Y-%m-%d')
