@@ -231,7 +231,7 @@ class Games(commands.Cog):
         
         # Buscar en RAWG
         from utils.rawg_api import rawg_client
-        games = rawg_client.search_games(current, limit=25)
+        games = rawg_client.search_games(current, limit=40)
         
         if not games:
             return [

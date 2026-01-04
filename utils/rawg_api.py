@@ -27,7 +27,7 @@ class RAWGClient:
             'humble games', 'coffee stain', 'panic', 'finji'
         ]
     
-    def search_games(self, query: str, limit: int = 25) -> List[Dict]:
+    def search_games(self, query: str, limit: int = 40) -> List[Dict]:
         """Busca juegos por nombre"""
         
         # Verificar caché
@@ -41,7 +41,7 @@ class RAWGClient:
                 'search': query,
                 'page_size': limit,
                 'platforms': '187,4,18',  # PS5=187, PC=4, PS4=18
-                'exclude_additions': 'true',  # Excluir DLCs
+                #'exclude_additions': 'true',  # Excluir DLCs
                 'ordering': '-added,-rating'  # Por popularidad y rating
             }
             
