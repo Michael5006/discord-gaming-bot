@@ -79,12 +79,12 @@ class RAWGClient:
                     # Score base: popularidad (más peso)
                     score = added * 2
                     
-                    # Bonus por metacritic alto
-                    if metacritic >= 90:
+                    # Bonus por metacritic alto (verificar que no sea None)
+                    if metacritic and metacritic >= 90:
                         score += 50000
-                    elif metacritic >= 80:
+                    elif metacritic and metacritic >= 80:
                         score += 30000
-                    elif metacritic >= 70:
+                    elif metacritic and metacritic >= 70:
                         score += 10000
                     
                     # Bonus por juegos recientes
