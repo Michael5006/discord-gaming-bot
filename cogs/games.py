@@ -224,29 +224,29 @@ class Games(commands.Cog):
         if len(current) < 3:
             return [
                 app_commands.Choice(
-                    name="Escribe al menos 3 letras para buscar...",
+                    name="✍️ Escribe al menos 3 letras para buscar...",
                     value="0:buscar"
                 )
             ]
         
         # Buscar en RAWG
         from utils.rawg_api import rawg_client
-        games = rawg_client.search_games(current, limit=40)
+        games = rawg_client.search_games(current, limit=24)  # 24 para dejar espacio al manual
+        
+        choices = []
+        
+        # SIEMPRE agregar opción manual PRIMERO
+        choices.append(
+            app_commands.Choice(
+                name=f"✍️ Registrar '{current}' manualmente",
+                value=f"manual:{current}"
+            )
+        )
         
         if not games:
-            return [
-                app_commands.Choice(
-                    name=f"No se encontraron juegos para '{current}'",
-                    value=f"0:{current}"
-                ),
-                app_commands.Choice(
-                    name="→ Registrar manualmente (escribe el nombre completo)",
-                    value=f"manual:{current}"
-                )
-            ]
+            return choices
         
-        # Formatear opciones
-        choices = []
+        # Formatear opciones de RAWG
         for game in games:
             # Crear nombre descriptivo
             name_parts = [game['name']]
@@ -254,7 +254,7 @@ class Games(commands.Cog):
             if game['year'] and game['year'] != 'Unknown':
                 name_parts.append(f"({game['year']})")
             
-            # Agregar categoría detectada
+            # Categoría
             categoria_emoji = {
                 'Retro': '🕹️',
                 'Indie': '🎨',
@@ -264,7 +264,7 @@ class Games(commands.Cog):
             name_parts.append(f"{categoria_emoji}")
             
             # Plataformas
-            platforms_str = ", ".join(game['platforms'][:2])  # Máximo 2 plataformas
+            platforms_str = ", ".join(game['platforms'][:2])
             name_parts.append(f"[{platforms_str}]")
             
             choice_name = " ".join(name_parts)
@@ -272,21 +272,12 @@ class Games(commands.Cog):
             
             choices.append(
                 app_commands.Choice(
-                    name=choice_name[:100],  # Discord limita a 100 caracteres
+                    name=choice_name[:100],
                     value=choice_value[:100]
                 )
             )
         
-        # Agregar opción de registro manual al final
-        if len(choices) < 25:
-            choices.append(
-                app_commands.Choice(
-                    name="→ No está en la lista - Registrar manualmente",
-                    value=f"manual:{current}"
-                )
-            )
-        
-        return choices[:25]  # Discord limita a 25 opciones
+        return choices[:25]  # Discord limita a 25
 
 async def setup(bot):
     await bot.add_cog(Games(bot))

@@ -27,8 +27,8 @@ class RAWGClient:
             'humble games', 'coffee stain', 'panic', 'finji'
         ]
     
-    def search_games(self, query: str, limit: int = 40) -> List[Dict]:
-        """Busca juegos por nombre"""
+    def search_games(self, query: str, limit: int = 25) -> List[Dict]:
+        """Busca juegos por nombre con mejor ordenamiento"""
         
         # Verificar caché
         cache_key = f"search_{query.lower()}"
@@ -36,13 +36,35 @@ class RAWGClient:
             return self.cache[cache_key]
         
         try:
+            # BÚSQUEDA 1: Búsqueda exacta/precisa
+            params_exact = {
+                'key': self.api_key,
+                'search_exact': 'true',  # Búsqueda exacta
+                'search': query,
+                'page_size': 10,
+                'platforms': '187,4,18',
+                'exclude_additions': 'true',
+            }
+            
+            response_exact = requests.get(
+                f'{self.base_url}/games',
+                params=params_exact,
+                timeout=5
+            )
+            
+            exact_results = []
+            if response_exact.status_code == 200:
+                data = response_exact.json()
+                exact_results = data.get('results', [])
+            
+            # BÚSQUEDA 2: Búsqueda normal
             params = {
                 'key': self.api_key,
                 'search': query,
-                'page_size': limit,
-                'platforms': '187,4,18',  # PS5=187, PC=4, PS4=18
-                #'exclude_additions': 'true',  # Excluir DLCs
-                'ordering': '-added,-rating'  # Por popularidad y rating
+                'page_size': 40,  # Más resultados
+                'platforms': '187,4,18',
+                'exclude_additions': 'true',
+                'ordering': '-added'  # Por popularidad
             }
             
             response = requests.get(
@@ -51,44 +73,54 @@ class RAWGClient:
                 timeout=5
             )
             
+            normal_results = []
             if response.status_code == 200:
                 data = response.json()
-                results = data.get('results', [])
-                
-                # Filtrar y formatear resultados
-                formatted_results = []
-                seen_names = set()  # Para evitar duplicados
-                
-                for game in results:
-                    formatted_game = self._format_game(game)
-                    if formatted_game:
-                        # Evitar duplicados por nombre + año
-                        game_key = f"{formatted_game['name'].lower()}_{formatted_game['year']}"
-                        
-                        # Solo agregar si no está duplicado y tiene año válido
-                        if game_key not in seen_names and formatted_game['year'] != 'Unknown':
-                            seen_names.add(game_key)
-                            formatted_results.append(formatted_game)
-                
-                # Guardar en caché
-                self.cache[cache_key] = formatted_results
-                
-                # Ordenar por score combinado (popularidad + calidad)
-                def get_score(game):
-                    added = game.get('added', 0)
-                    metacritic = game.get('metacritic', 0)
-                    
-                    # Score = 70% popularidad + 30% metacritic
-                    popularity_score = added / 1000  # Normalizar
-                    quality_score = metacritic * 100 if metacritic else 0
-                    
-                    return popularity_score + quality_score
-                
-                formatted_results.sort(key=get_score, reverse=True)
-                
-                return formatted_results
+                normal_results = data.get('results', [])
             
-            return []
+            # Combinar resultados: exactos primero, luego normales
+            all_results = exact_results + normal_results
+            
+            # Filtrar y formatear
+            formatted_results = []
+            seen_ids = set()
+            
+            for game in all_results:
+                game_id = game.get('id')
+                if game_id in seen_ids:
+                    continue
+                
+                formatted_game = self._format_game(game)
+                if formatted_game and formatted_game['year'] != 'Unknown':
+                    seen_ids.add(game_id)
+                    formatted_results.append(formatted_game)
+            
+            # Ordenar por score combinado
+            def get_priority_score(game):
+                added = game.get('added', 0)
+                metacritic = game.get('metacritic', 0)
+                year = int(game.get('year', 0)) if game.get('year', '').isdigit() else 0
+                
+                # Score base por popularidad (peso mayor)
+                popularity_score = added
+                
+                # Bonus por metacritic alto
+                quality_bonus = metacritic * 1000 if metacritic >= 80 else metacritic * 500
+                
+                # Bonus por juegos recientes (2015+)
+                recency_bonus = (year - 2000) * 1000 if year >= 2015 else 0
+                
+                return popularity_score + quality_bonus + recency_bonus
+            
+            formatted_results.sort(key=get_priority_score, reverse=True)
+            
+            # Limitar a los mejores resultados
+            formatted_results = formatted_results[:limit]
+            
+            # Guardar en caché
+            self.cache[cache_key] = formatted_results
+            
+            return formatted_results
             
         except Exception as e:
             print(f'Error buscando juegos en RAWG: {e}')
@@ -201,6 +233,7 @@ class RAWGClient:
             
             # FRANCHISES AAA CONOCIDAS (esto es clave)
             aaa_franchises = [
+                'remake', 'remaster', 'part i', 'part 1',
                 'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
                 'horizon', 'ghost of tsushima', 'spider-man', 'spiderman',
                 'call of duty', 'battlefield', 'assassin', 'far cry', 'watch dogs',
