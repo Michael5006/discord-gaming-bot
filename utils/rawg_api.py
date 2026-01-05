@@ -18,7 +18,7 @@ class RAWGClient:
             'square enix', 'capcom', 'bandai namco', 'namco',
             'sega', 'rockstar', 'rockstar games', 'take-two', '2k games',
             'bethesda', 'zenimax', 'warner bros', 'wb games',
-            'thq nordic', 'embracer', 'konami', 'atlus'
+            'thq nordic', 'embracer', 'konami', 'atlus', 'sundial interactive'
         ]
         
         # Publishers y estudios considerados Indie (autopublicados o sellos independientes)
@@ -339,7 +339,7 @@ class RAWGClient:
     def _detect_category(self, game: Dict, year: str, metacritic: int) -> str:
         try:
             # 1. RETRO: Prioridad por año
-            if year.isdigit() and int(year) <= 2005:
+            if year.isdigit() and int(year) <= 2007:
                 return 'Retro'
             
             name_lower = game.get('name', '').lower()
@@ -349,7 +349,25 @@ class RAWGClient:
             developers = [d.get('name', '').lower() for d in game.get('developers', [])]
 
             # --- DEBUG: Esto imprimirá en tu consola qué está viendo el bot ---
-            # print(f"Analizando: {name_lower} | Géneros: {genres} | Publishers: {publishers}")
+            #if 'hollow knight' in name_lower:
+                ##print(f'  Géneros: {genres}')
+                #print(f'  Tags: {tags}')
+                #print(f'  Publishers: {publishers}')
+                #print(f'  Developers: {developers}')
+                
+            # --- PASO 0: HEREDAR CATEGORÍA DE JUEGO BASE (para DLCs/expansiones) ---
+            # Lista de juegos indie conocidos que pueden tener DLCs
+            indie_base_games = [
+            'hollow knight', 'celeste', 'hades', 'dead cells', 'cuphead',
+            'stardew valley', 'undertale', 'terraria', 'binding of isaac',
+            'enter the gungeon', 'slay the spire', 'darkest dungeon',
+            'risk of rain', 'dont starve', "don't starve", 'factorio',
+            'valheim', 'subnautica', 'the forest', 'among us', 'fall guys',
+            'phasmophobia', 'lethal company', 'content warning'
+        ]
+            for indie_game in indie_base_games:
+                if indie_game in name_lower:
+                    return 'Indie'
 
             # --- PASO 1: ¿ES INDIE? (Ahora va PRIMERO) ---
             # Si RAWG dice que es Indie, le creemos a muerte (ej. Hollow Knight, V Rising)
@@ -368,10 +386,6 @@ class RAWGClient:
             # Si no es empresa gigante y RAWG dice que es indie, es INDIE
             if is_indie_by_rawg or is_indie_by_list:
                 return 'Indie'
-
-            # --- PASO 3: ¿POR QUÉ HOLLOW KNIGHT SALE AAA? ---
-            # Si aún tienes líneas que digan "if added > 100000" o "if metacritic > 80",
-            # BORRALAS. Esas reglas son las que confunden a los indies buenos con AAA.
 
             # Si no es AAA ni Indie, es el término medio: AA
             return 'Aa'
