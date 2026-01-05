@@ -3,6 +3,32 @@ import os
 
 DATABASE_PATH = 'data/games.db'
 
+async def debug_schema():
+    """Muestra el esquema completo de la BD"""
+    try:
+        db = await get_db()
+        
+        print("\n" + "="*60)
+        print("🔍 DEBUG: ESTRUCTURA DE LA BASE DE DATOS")
+        print("="*60)
+        
+        # Ver estructura de tabla games
+        cursor = await db.execute("PRAGMA table_info(games)")
+        columns = await cursor.fetchall()
+        
+        print("\n📋 TABLA 'games':")
+        print("-" * 60)
+        for col in columns:
+            col_id, name, type_, notnull, default, pk = col
+            print(f"  {col_id}. {name:20} {type_:15} NULL={not notnull} DEFAULT={default} PK={pk}")
+        
+        print("\n" + "="*60 + "\n")
+        
+        await db.close()
+        
+    except Exception as e:
+        print(f"❌ Error en debug_schema: {e}")
+
 async def get_db():
     """Retorna una conexión a la base de datos"""
     return await aiosqlite.connect(DATABASE_PATH)
@@ -29,7 +55,7 @@ async def init_db():
             )
         ''')
         
-        # Tabla de juegos (usando submission_date en lugar de created_at)
+        # Tabla de juegos
         await db.execute('''
             CREATE TABLE IF NOT EXISTS games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +79,9 @@ async def init_db():
         await db.commit()
         
         print('✅ Base de datos inicializada correctamente')
+        
+        # DEBUG: Mostrar estructura real
+        await debug_schema()
         
         # Verificar esquema
         await fix_database_schema()
