@@ -4,31 +4,60 @@ from models.game import Game
 from models.user import User
 import config
 
-class RankingView(ui.View):
-    """Vista principal del ranking con paginación"""
+
+class RankingTabView(ui.View):
+    """Vista principal del ranking con pestañas"""
     
-    def __init__(self, users: list, page: int = 0):
+    def __init__(self, users: list, all_games: list):
         super().__init__(timeout=300)
         self.users = users
-        self.page = page
+        self.all_games = all_games
+        self.current_tab = "players"  # players, stats, category
+        self.players_page = 0
         self.max_pages = (len(users) - 1) // 5 + 1
         
-        self.update_buttons()
+        self.update_all_buttons()
     
-    def update_buttons(self):
-        """Actualiza el estado de los botones según la página actual"""
-        self.previous_button.disabled = (self.page == 0)
-        self.next_button.disabled = (self.page >= self.max_pages - 1)
+    def update_all_buttons(self):
+        """Actualiza estado de todos los botones"""
+        # Actualizar botones de pestañas (resaltar actual)
+        self.players_tab_btn.style = discord.ButtonStyle.primary if self.current_tab == "players" else discord.ButtonStyle.secondary
+        self.stats_tab_btn.style = discord.ButtonStyle.primary if self.current_tab == "stats" else discord.ButtonStyle.secondary
+        self.category_tab_btn.style = discord.ButtonStyle.primary if self.current_tab == "category" else discord.ButtonStyle.secondary
+        
+        # Actualizar navegación
+        if self.current_tab == "players":
+            self.prev_btn.disabled = (self.players_page == 0)
+            self.next_btn.disabled = (self.players_page >= self.max_pages - 1)
+            self.prev_btn.style = discord.ButtonStyle.gray
+            self.next_btn.style = discord.ButtonStyle.gray
+        else:
+            self.prev_btn.disabled = True
+            self.next_btn.disabled = True
+        
+        # Limpiar y agregar botones de biblioteca si estamos en players
+        self.clear_library_buttons()
+        if self.current_tab == "players":
+            self.add_library_buttons()
     
     def get_embed(self) -> discord.Embed:
-        """Genera el embed del ranking para la página actual"""
-        start_idx = self.page * 5
+        """Genera el embed según la pestaña actual"""
+        if self.current_tab == "players":
+            return self.get_players_embed()
+        elif self.current_tab == "stats":
+            return self.get_stats_embed()
+        elif self.current_tab == "category":
+            return self.get_category_embed()
+    
+    def get_players_embed(self) -> discord.Embed:
+        """Embed de ranking de jugadores"""
+        start_idx = self.players_page * 5
         end_idx = min(start_idx + 5, len(self.users))
         page_users = self.users[start_idx:end_idx]
         
         embed = discord.Embed(
-            title=f"🏆 RANKING DEL CONCURSO 2025-2027",
-            description=f"Clasificación actual • Página {self.page + 1}/{self.max_pages}",
+            title="🏆 RANKING DEL CONCURSO 2025-2027",
+            description=f"**👥 Top Players** • Página {self.players_page + 1}/{self.max_pages}",
             color=config.COLORES['info']
         )
         
@@ -48,7 +77,7 @@ class RankingView(ui.View):
             
             value = f"{bar}\n"
             value += f"💰 **{user.total_points}** pts • 🎮 **{user.total_games}** juegos{elkie_marker}\n"
-            value += f"*Usa el botón 📚 para ver su biblioteca*"
+            value += f"*Click 📚 para ver su biblioteca*"
             
             embed.add_field(
                 name=f"{medal} {user.username}",
@@ -63,53 +92,192 @@ class RankingView(ui.View):
         
         return embed
     
-    @ui.button(label="◀️ Anterior", style=discord.ButtonStyle.gray, custom_id="previous")
-    async def previous_button(self, interaction: discord.Interaction, button: ui.Button):
-        """Ir a la página anterior"""
-        if self.page > 0:
-            self.page -= 1
-            self.update_buttons()
-            self.clear_detail_buttons()
-            self.add_detail_buttons()
+    def get_stats_embed(self) -> discord.Embed:
+        """Embed de estadísticas generales"""
+        embed = discord.Embed(
+            title="🏆 RANKING DEL CONCURSO 2025-2027",
+            description="**📊 Estadísticas Generales**",
+            color=config.COLORES['aprobado']
+        )
+        
+        # Estadísticas generales
+        total_games = len(self.all_games)
+        total_points = sum(user.total_points for user in self.users)
+        total_platinos = sum(1 for game in self.all_games if game.has_platinum)
+        promedio = round(total_games / len(self.users), 1) if self.users else 0
+        
+        stats_text = (
+            f"🎮 **{total_games}** juegos completados\n"
+            f"💰 **{total_points}** puntos totales\n"
+            f"🏆 **{total_platinos}** platinos obtenidos\n"
+            f"📊 **{promedio}** juegos por persona"
+        )
+        
+        embed.add_field(
+            name="📈 Resumen Global",
+            value=stats_text,
+            inline=False
+        )
+        
+        # Récords
+        if self.users:
+            most_games = max(self.users, key=lambda x: x.total_games)
+            most_points = max(self.users, key=lambda x: x.total_points)
+            
+            records_text = (
+                f"🎮 **Más juegos:** {most_games.username} ({most_games.total_games})\n"
+                f"💰 **Más puntos:** {most_points.username} ({most_points.total_points})"
+            )
+            
+            embed.add_field(
+                name="🏅 Récords",
+                value=records_text,
+                inline=False
+            )
+        
+        # Premios
+        if self.users and self.users[0].is_elkie:
+            premio_text = "🥇 1er lugar: **$30 USD**\n🥈 2do lugar: **$20 USD** (Regla Elkie activa 👑)"
+        else:
+            premio_text = "🥇 1er lugar: **$30 USD**"
+        
+        embed.add_field(
+            name="🏆 Premios",
+            value=premio_text,
+            inline=False
+        )
+        
+        return embed
+    
+    def get_category_embed(self) -> discord.Embed:
+        """Embed de breakdown por categorías"""
+        embed = discord.Embed(
+            title="🏆 RANKING DEL CONCURSO 2025-2027",
+            description="**🎮 Análisis por Categoría**",
+            color=0x57F287  # Verde
+        )
+        
+        # Contar por categorías
+        categories = {}
+        platforms = {}
+        
+        for game in self.all_games:
+            categories[game.category] = categories.get(game.category, 0) + 1
+            platforms[game.platform] = platforms.get(game.platform, 0) + 1
+        
+        # Categorías
+        if categories:
+            cat_text = ""
+            total_games = len(self.all_games)
+            sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
+            
+            for cat, count in sorted_cats:
+                emoji = config.EMOJIS.get(cat.lower(), '🎮')
+                percentage = round((count / total_games) * 100)
+                filled = percentage // 10
+                bar = "▰" * filled + "▱" * (10 - filled)
+                
+                cat_text += f"{emoji} **{cat}**\n{bar} {percentage}% ({count} juegos)\n\n"
+            
+            embed.add_field(
+                name="📊 Por Categoría",
+                value=cat_text,
+                inline=False
+            )
+        
+        # Plataformas
+        if platforms:
+            plat_text = ""
+            total_games = len(self.all_games)
+            sorted_plats = sorted(platforms.items(), key=lambda x: x[1], reverse=True)
+            
+            for plat, count in sorted_plats:
+                emoji = config.EMOJIS.get(plat.lower(), '🎮')
+                percentage = round((count / total_games) * 100)
+                filled = percentage // 10
+                bar = "▰" * filled + "▱" * (10 - filled)
+                
+                plat_text += f"{emoji} **{plat}**\n{bar} {percentage}% ({count} juegos)\n\n"
+            
+            embed.add_field(
+                name="💻 Por Plataforma",
+                value=plat_text,
+                inline=False
+            )
+        
+        return embed
+    
+    # ==================== BOTONES DE PESTAÑAS ====================
+    
+    @ui.button(label="Top Players", emoji="👥", style=discord.ButtonStyle.primary, custom_id="tab_players", row=0)
+    async def players_tab_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Cambiar a pestaña de jugadores"""
+        self.current_tab = "players"
+        self.update_all_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="Estadísticas", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="tab_stats", row=0)
+    async def stats_tab_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Cambiar a pestaña de estadísticas"""
+        self.current_tab = "stats"
+        self.update_all_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="Por Categoría", emoji="🎮", style=discord.ButtonStyle.secondary, custom_id="tab_category", row=0)
+    async def category_tab_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Cambiar a pestaña de categorías"""
+        self.current_tab = "category"
+        self.update_all_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    # ==================== NAVEGACIÓN ====================
+    
+    @ui.button(label="◀️", style=discord.ButtonStyle.gray, custom_id="prev", row=1)
+    async def prev_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Página anterior (solo en players)"""
+        if self.current_tab == "players" and self.players_page > 0:
+            self.players_page -= 1
+            self.update_all_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
-    @ui.button(label="▶️ Siguiente", style=discord.ButtonStyle.gray, custom_id="next")
-    async def next_button(self, interaction: discord.Interaction, button: ui.Button):
-        """Ir a la página siguiente"""
-        if self.page < self.max_pages - 1:
-            self.page += 1
-            self.update_buttons()
-            self.clear_detail_buttons()
-            self.add_detail_buttons()
+    @ui.button(label="▶️", style=discord.ButtonStyle.gray, custom_id="next", row=1)
+    async def next_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Página siguiente (solo en players)"""
+        if self.current_tab == "players" and self.players_page < self.max_pages - 1:
+            self.players_page += 1
+            self.update_all_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
-    def clear_detail_buttons(self):
-        """Elimina los botones de ver detalles"""
-        while len(self.children) > 2:
+    # ==================== BOTONES DE BIBLIOTECA ====================
+    
+    def clear_library_buttons(self):
+        """Elimina botones de biblioteca"""
+        while len(self.children) > 5:  # Mantener solo pestañas + navegación
             self.remove_item(self.children[-1])
     
-    def add_detail_buttons(self):
-        """Agrega botones de 'Ver Biblioteca' para cada usuario de la página"""
-        start_idx = self.page * 5
+    def add_library_buttons(self):
+        """Agrega botones de biblioteca para usuarios de la página actual"""
+        start_idx = self.players_page * 5
         end_idx = min(start_idx + 5, len(self.users))
         page_users = self.users[start_idx:end_idx]
         
         for i, user in enumerate(page_users):
             button = ui.Button(
-                label=f"📚 {user.username}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"library_{user.discord_id}",
-                row=1 if i < 3 else 2
+                label=user.username[:20],
+                emoji="📚",
+                style=discord.ButtonStyle.success,
+                custom_id=f"lib_{user.discord_id}",
+                row=2 if i < 3 else 3
             )
             
-            async def library_callback(interaction: discord.Interaction, user_data=user):
-                await self.show_user_library(interaction, user_data)
+            async def lib_callback(interaction: discord.Interaction, user_data=user):
+                await self.show_library(interaction, user_data)
             
-            button.callback = library_callback
+            button.callback = lib_callback
             self.add_item(button)
     
-    async def show_user_library(self, interaction: discord.Interaction, user: User):
-        """Muestra la biblioteca de juegos del usuario"""
+    async def show_library(self, interaction: discord.Interaction, user: User):
+        """Muestra biblioteca del usuario"""
         games = await Game.get_by_user(user.discord_id, status='APPROVED')
         
         if not games:
@@ -121,14 +289,14 @@ class RankingView(ui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
-        # Mostrar biblioteca con lista de juegos
+        # Usar las vistas existentes de biblioteca
         library_view = GameLibraryView(user, games, self)
         await interaction.response.send_message(
             embed=library_view.get_embed(),
             view=library_view,
             ephemeral=True
         )
-
+#######################################
 
 class GameLibraryView(ui.View):
     """Vista de biblioteca - Lista de juegos con imágenes"""

@@ -15,11 +15,11 @@ class Ranking(commands.Cog):
     
     @app_commands.command(name="ranking", description="Ver el ranking interactivo del concurso")
     async def ranking(self, interaction: discord.Interaction):
-        """Muestra el ranking paginado con botones interactivos"""
+        """Muestra el ranking con pestañas interactivas"""
         
         await interaction.response.defer()
         
-        # Obtener todos los usuarios rankeados
+        # Obtener usuarios y juegos
         users = await User.get_all_ranked()
         ranked_users = [user for user in users if user.total_games > 0]
         
@@ -32,11 +32,16 @@ class Ranking(commands.Cog):
             await interaction.followup.send(embed=embed)
             return
         
-        # Crear vista con paginación
-        from views.ranking_view import RankingView
+        # Obtener todos los juegos aprobados
+        all_games = []
+        for user in ranked_users:
+            games = await Game.get_by_user(user.discord_id, status='APPROVED')
+            all_games.extend(games)
         
-        view = RankingView(ranked_users, page=0)
-        view.add_detail_buttons()  # Agregar botones de detalles
+        # Crear vista con pestañas
+        from views.ranking_view import RankingTabView
+        
+        view = RankingTabView(ranked_users, all_games)
         
         await interaction.followup.send(
             embed=view.get_embed(),
