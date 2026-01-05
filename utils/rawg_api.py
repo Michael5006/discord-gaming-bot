@@ -21,15 +21,33 @@ class RAWGClient:
             'thq nordic', 'embracer', 'konami', 'atlus'
         ]
         
-        # Publishers considerados Indie
-        self.indie_publishers = [
-            'devolver digital', 'annapurna', 'team17', 'raw fury',
-            'humble games', 'coffee stain', 'panic', 'finji', 'stunlock studios', 'team cherry'
-        ]
+        # Publishers y estudios considerados Indie (autopublicados o sellos independientes)
+        self.indie_publishers = {
+        # Los "Big Players" (Distribuidores Indie)
+            'devolver digital', 'annapurna interactive', 'annapurna', 'team17', 'team 17',
+            'raw fury', 'humble games', 'humble bundle', 'tinybuild', 'tiny build',
+            'chucklefish', 'coffee stain', 'coffee stain publishing', 'paradox arc',
+            'curve games', 'curve digital', 'hooded horse', 'new blood interactive',
+            'no more robots', 'finji', 'panic', 'fellow traveller', 'neon doctrine',
+            'daedalic entertainment', 'headup games', 'thunderful', 'thunderful publishing',
+            'merge games', 'wired productions', 'serenity forge', 'whitethorn games',
+            'versus evil', 'playdigious', 'modus games', 'team cherry', 'supergiant games',
+    
+        # Estudios Icónicos (que suelen aparecer como su propio publisher)
+            'klei entertainment', 'stunlock studios', 'motion twin', 'poncle', 
+            'concernedape', 're-logic', 'relogic', 'toby fox', 'inner sloth', 'innersloth',
+            'ghost ship games', 'iron gate', 'yacht club games', 'the behemoth', 
+            'frictional games', 'subset games', 'larian studios', # Larian es debatible (AA/Indie), pero es independiente
+            'mega crit', 'red hook studios', 'unknown worlds entertainment',
+    
+        # Sellos de nicho y terror/retro
+            'dread xp', 'dreadxp', 'akamai studio', 'baltoro games', 'plug in digital',
+            'dotemu', 'tribute games', 'nightdive studios', 'bithell games'
+}
         
         # Franquicias AAA (Para asegurar que juegos como "RE4 Remake" sean AAA)
         self.aaa_franchises = [
-            'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
+                'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
                 'horizon', 'ghost of tsushima', 'spider-man', 'spiderman',
                 'call of duty', 'battlefield', 'assassin', 'far cry', 'watch dogs',
                 'grand theft auto', 'gta', 'red dead', 'elder scrolls', 'fallout',
