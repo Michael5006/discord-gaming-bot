@@ -8,25 +8,20 @@ class RankingView(ui.View):
     """Vista principal del ranking con paginación"""
     
     def __init__(self, users: list, page: int = 0):
-        super().__init__(timeout=300)  # 5 minutos
+        super().__init__(timeout=300)
         self.users = users
         self.page = page
         self.max_pages = (len(users) - 1) // 5 + 1
         
-        # Actualizar estado de botones
         self.update_buttons()
     
     def update_buttons(self):
         """Actualiza el estado de los botones según la página actual"""
-        # Deshabilitar botón anterior si estamos en la primera página
         self.previous_button.disabled = (self.page == 0)
-        
-        # Deshabilitar botón siguiente si estamos en la última página
         self.next_button.disabled = (self.page >= self.max_pages - 1)
     
     def get_embed(self) -> discord.Embed:
         """Genera el embed del ranking para la página actual"""
-        # Calcular usuarios de esta página
         start_idx = self.page * 5
         end_idx = min(start_idx + 5, len(self.users))
         page_users = self.users[start_idx:end_idx]
@@ -37,7 +32,6 @@ class RankingView(ui.View):
             color=config.COLORES['info']
         )
         
-        # Agregar cada usuario
         medals = {0: '🥇', 1: '🥈', 2: '🥉'}
         
         for i, user in enumerate(page_users):
@@ -45,7 +39,6 @@ class RankingView(ui.View):
             medal = medals.get(actual_position, f'**{actual_position + 1}.**')
             elkie_marker = " 👑" if user.is_elkie else ""
             
-            # Barra de progreso
             if self.users[0].total_points > 0:
                 percentage = int((user.total_points / self.users[0].total_points) * 100)
                 filled = percentage // 10
@@ -53,10 +46,9 @@ class RankingView(ui.View):
             else:
                 bar = "▱" * 10
             
-            # Información del usuario
             value = f"{bar}\n"
             value += f"💰 **{user.total_points}** pts • 🎮 **{user.total_games}** juegos{elkie_marker}\n"
-            value += f"*Usa el botón debajo para ver sus juegos*"
+            value += f"*Usa el botón 📚 para ver su biblioteca*"
             
             embed.add_field(
                 name=f"{medal} {user.username}",
@@ -64,7 +56,6 @@ class RankingView(ui.View):
                 inline=False
             )
         
-        # Footer
         total_players = len(self.users)
         total_games = sum(u.total_games for u in self.users)
         
@@ -78,11 +69,8 @@ class RankingView(ui.View):
         if self.page > 0:
             self.page -= 1
             self.update_buttons()
-            
-            # Limpiar botones de "Ver Detalles" anteriores
             self.clear_detail_buttons()
             self.add_detail_buttons()
-            
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
     @ui.button(label="▶️ Siguiente", style=discord.ButtonStyle.gray, custom_id="next")
@@ -91,43 +79,37 @@ class RankingView(ui.View):
         if self.page < self.max_pages - 1:
             self.page += 1
             self.update_buttons()
-            
-            # Actualizar botones de detalles
             self.clear_detail_buttons()
             self.add_detail_buttons()
-            
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
     def clear_detail_buttons(self):
         """Elimina los botones de ver detalles"""
-        # Mantener solo los botones de navegación (primeros 2)
         while len(self.children) > 2:
             self.remove_item(self.children[-1])
     
     def add_detail_buttons(self):
-        """Agrega botones de 'Ver Detalles' para cada usuario de la página"""
+        """Agrega botones de 'Ver Biblioteca' para cada usuario de la página"""
         start_idx = self.page * 5
         end_idx = min(start_idx + 5, len(self.users))
         page_users = self.users[start_idx:end_idx]
         
         for i, user in enumerate(page_users):
             button = ui.Button(
-                label=f"📊 {user.username}",
+                label=f"📚 {user.username}",
                 style=discord.ButtonStyle.primary,
-                custom_id=f"details_{user.discord_id}",
-                row=1 if i < 3 else 2  # Dividir en 2 filas
+                custom_id=f"library_{user.discord_id}",
+                row=1 if i < 3 else 2
             )
             
-            # Crear callback dinámico
-            async def detail_callback(interaction: discord.Interaction, user_data=user):
-                await self.show_user_details(interaction, user_data)
+            async def library_callback(interaction: discord.Interaction, user_data=user):
+                await self.show_user_library(interaction, user_data)
             
-            button.callback = detail_callback
+            button.callback = library_callback
             self.add_item(button)
     
-    async def show_user_details(self, interaction: discord.Interaction, user: User):
-        """Muestra los detalles de un usuario específico"""
-        # Obtener juegos del usuario
+    async def show_user_library(self, interaction: discord.Interaction, user: User):
+        """Muestra la biblioteca de juegos del usuario"""
         games = await Game.get_by_user(user.discord_id, status='APPROVED')
         
         if not games:
@@ -139,17 +121,17 @@ class RankingView(ui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
-        # Crear vista de detalles
-        detail_view = UserDetailView(user, games, self)
+        # Mostrar biblioteca con lista de juegos
+        library_view = GameLibraryView(user, games, self)
         await interaction.response.send_message(
-            embed=detail_view.get_embed(),
-            view=detail_view,
+            embed=library_view.get_embed(),
+            view=library_view,
             ephemeral=True
         )
 
 
-class UserDetailView(ui.View):
-    """Vista de detalles de un usuario con sus juegos"""
+class GameLibraryView(ui.View):
+    """Vista de biblioteca - Lista de juegos con imágenes"""
     
     def __init__(self, user: User, games: list, parent_view: RankingView):
         super().__init__(timeout=180)
@@ -157,7 +139,8 @@ class UserDetailView(ui.View):
         self.games = games
         self.parent_view = parent_view
         self.page = 0
-        self.max_pages = (len(games) - 1) // 5 + 1
+        self.games_per_page = 3  # 3 juegos por página para que se vean las imágenes
+        self.max_pages = (len(games) - 1) // self.games_per_page + 1
         
         self.update_buttons()
     
@@ -165,28 +148,24 @@ class UserDetailView(ui.View):
         """Actualiza estado de botones de paginación"""
         self.previous_game.disabled = (self.page == 0)
         self.next_game.disabled = (self.page >= self.max_pages - 1)
+        
+        # Limpiar botones de detalles viejos
+        self.clear_detail_buttons()
+        self.add_game_detail_buttons()
     
     def get_embed(self) -> discord.Embed:
-        """Genera embed con los juegos del usuario"""
-        # Calcular juegos de esta página
-        start_idx = self.page * 5
-        end_idx = min(start_idx + 5, len(self.games))
+        """Genera embed de biblioteca con lista visual de juegos"""
+        start_idx = self.page * self.games_per_page
+        end_idx = min(start_idx + self.games_per_page, len(self.games))
         page_games = self.games[start_idx:end_idx]
         
         embed = discord.Embed(
-            title=f"🎮 Juegos de {self.user.username}",
+            title=f"📚 Biblioteca de {self.user.username}",
             description=f"Página {self.page + 1}/{self.max_pages}",
             color=config.COLORES['aprobado']
         )
         
-        # Estadísticas generales
-        stats_text = (
-            f"💰 **{self.user.total_points}** puntos totales\n"
-            f"🎮 **{self.user.total_games}** juegos completados"
-        )
-        embed.add_field(name="📊 Estadísticas", value=stats_text, inline=False)
-        
-        # Breakdown por categoría
+        # Estadísticas en el header
         categories = {}
         platinos = 0
         for game in self.games:
@@ -194,41 +173,74 @@ class UserDetailView(ui.View):
             if game.has_platinum:
                 platinos += 1
         
-        breakdown_text = ""
-        for cat, count in categories.items():
-            emoji = config.EMOJIS.get(cat.lower(), '🎮')
-            breakdown_text += f"{emoji} {cat}: {count} • "
-        
+        stats_text = f"💰 **{self.user.total_points}** pts • 🎮 **{self.user.total_games}** juegos"
         if platinos > 0:
-            breakdown_text += f"{config.EMOJIS['platino']} Platinos: {platinos}"
+            stats_text += f" • 🏆 **{platinos}** platinos"
         
-        embed.add_field(name="🎯 Breakdown", value=breakdown_text.rstrip(' • '), inline=False)
+        embed.add_field(name="📊 Estadísticas", value=stats_text, inline=False)
         
-        # Mostrar juegos de esta página
+        # Mostrar cada juego con su imagen
         for i, game in enumerate(page_games):
             categoria_emoji = config.EMOJIS.get(game.category.lower(), '🎮')
-            platino_emoji = f" {config.EMOJIS['platino']}" if game.has_platinum else ""
+            platino_emoji = "🏆" if game.has_platinum else ""
             
-            game_info = (
-                f"{categoria_emoji} **{game.category}** • {game.platform}\n"
-                f"💰 {game.total_points} pts{platino_emoji}"
-            )
+            # Información del juego
+            game_info = f"{categoria_emoji} **{game.category}** • {game.platform}\n"
+            game_info += f"💰 **{game.total_points}** pts {platino_emoji}\n"
+            game_info += f"👁️ *Click en 'Ver Detalles' para pantalla completa*"
             
             embed.add_field(
                 name=f"{start_idx + i + 1}. {game.game_name}",
                 value=game_info,
                 inline=False
             )
+            
+            # Si el juego tiene imagen, mostrarla como thumbnail (solo el primero)
+            if i == 0 and game.image_url:
+                embed.set_thumbnail(url=game.image_url)
         
-        # Usar la imagen del primer juego como thumbnail
-        if page_games and hasattr(page_games[0], 'image_url') and page_games[0].image_url:
-            embed.set_thumbnail(url=page_games[0].image_url)
-        
-        embed.set_footer(text=f"Total: {len(self.games)} juegos")
+        embed.set_footer(text=f"Total: {len(self.games)} juegos • Usa los botones para navegar")
         
         return embed
     
-    @ui.button(label="◀️", style=discord.ButtonStyle.gray, custom_id="prev_game")
+    def clear_detail_buttons(self):
+        """Elimina botones de detalles de juegos"""
+        # Mantener solo los 3 primeros botones (navegación + volver)
+        while len(self.children) > 3:
+            self.remove_item(self.children[-1])
+    
+    def add_game_detail_buttons(self):
+        """Agrega botones para ver detalles de cada juego en la página"""
+        start_idx = self.page * self.games_per_page
+        end_idx = min(start_idx + self.games_per_page, len(self.games))
+        page_games = self.games[start_idx:end_idx]
+        
+        for i, game in enumerate(page_games):
+            # Truncar nombre del juego para el botón
+            game_name_short = game.game_name[:15] + "..." if len(game.game_name) > 15 else game.game_name
+            
+            button = ui.Button(
+                label=f"👁️ {game_name_short}",
+                style=discord.ButtonStyle.success,
+                custom_id=f"detail_{game.id}",
+                row=3 if i < 2 else 4
+            )
+            
+            async def detail_callback(interaction: discord.Interaction, game_data=game, game_idx=start_idx + i):
+                await self.show_game_detail(interaction, game_data, game_idx)
+            
+            button.callback = detail_callback
+            self.add_item(button)
+    
+    async def show_game_detail(self, interaction: discord.Interaction, game: Game, game_index: int):
+        """Muestra vista detallada de un juego específico (full screen)"""
+        detail_view = GameDetailView(self.user, self.games, game_index, self)
+        await interaction.response.edit_message(
+            embed=detail_view.get_embed(),
+            view=detail_view
+        )
+    
+    @ui.button(label="◀️", style=discord.ButtonStyle.gray, custom_id="prev_game", row=0)
     async def previous_game(self, interaction: discord.Interaction, button: ui.Button):
         """Página anterior de juegos"""
         if self.page > 0:
@@ -236,7 +248,7 @@ class UserDetailView(ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
-    @ui.button(label="▶️", style=discord.ButtonStyle.gray, custom_id="next_game")
+    @ui.button(label="▶️", style=discord.ButtonStyle.gray, custom_id="next_game", row=0)
     async def next_game(self, interaction: discord.Interaction, button: ui.Button):
         """Página siguiente de juegos"""
         if self.page < self.max_pages - 1:
@@ -244,11 +256,113 @@ class UserDetailView(ui.View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
     
-    @ui.button(label="🔙 Volver al Ranking", style=discord.ButtonStyle.secondary, custom_id="back")
+    @ui.button(label="🔙 Volver al Ranking", style=discord.ButtonStyle.secondary, custom_id="back", row=0)
     async def back_button(self, interaction: discord.Interaction, button: ui.Button):
         """Volver al ranking"""
         await interaction.response.edit_message(
-            content="Volviendo al ranking...",
+            content="✅ Volviendo al ranking...",
             embed=None,
-            view=None
+            view=None,
+            delete_after=2
+        )
+
+
+class GameDetailView(ui.View):
+    """Vista detallada de un juego - Pantalla completa estilo carrusel"""
+    
+    def __init__(self, user: User, games: list, current_index: int, library_view: GameLibraryView):
+        super().__init__(timeout=180)
+        self.user = user
+        self.games = games
+        self.current_index = current_index
+        self.library_view = library_view
+        
+        self.update_buttons()
+    
+    def update_buttons(self):
+        """Actualiza botones de navegación"""
+        self.previous_game_btn.disabled = (self.current_index == 0)
+        self.next_game_btn.disabled = (self.current_index >= len(self.games) - 1)
+    
+    def get_embed(self) -> discord.Embed:
+        """Genera embed de detalle full screen del juego"""
+        game = self.games[self.current_index]
+        
+        # Color según categoría
+        color_map = {
+            'AAA': config.COLORES['aprobado'],
+            'AA': config.COLORES['info'],
+            'Indie': 0xFF6B9D,  # Rosa
+            'Retro': 0xFFD700   # Dorado
+        }
+        color = color_map.get(game.category, config.COLORES['info'])
+        
+        embed = discord.Embed(
+            title=f"🎮 {game.game_name}",
+            color=color
+        )
+        
+        # IMAGEN GRANDE (la parte más importante)
+        if game.image_url:
+            embed.set_image(url=game.image_url)
+        
+        # Información del juego
+        categoria_emoji = config.EMOJIS.get(game.category.lower(), '🎮')
+        
+        info_principal = f"{categoria_emoji} **{game.category}**"
+        info_principal += f" • 💻 **{game.platform}**"
+        if game.has_platinum:
+            info_principal += f" • 🏆 **Platino**"
+        
+        embed.add_field(
+            name="📋 Información",
+            value=info_principal,
+            inline=False
+        )
+        
+        # Puntos
+        embed.add_field(
+            name="💰 Puntos",
+            value=f"**{game.total_points}** pts",
+            inline=True
+        )
+        
+        # Fecha de registro
+        if game.submission_date:
+            fecha = game.submission_date.split(' ')[0] if ' ' in str(game.submission_date) else str(game.submission_date)
+            embed.add_field(
+                name="📅 Registrado",
+                value=fecha,
+                inline=True
+            )
+        
+        # Footer con posición
+        embed.set_footer(
+            text=f"Juego {self.current_index + 1} de {len(self.games)} • Biblioteca de {self.user.username}"
+        )
+        
+        return embed
+    
+    @ui.button(label="◀️ Anterior", style=discord.ButtonStyle.primary, custom_id="prev_detail")
+    async def previous_game_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Ir al juego anterior"""
+        if self.current_index > 0:
+            self.current_index -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="▶️ Siguiente", style=discord.ButtonStyle.primary, custom_id="next_detail")
+    async def next_game_btn(self, interaction: discord.Interaction, button: ui.Button):
+        """Ir al juego siguiente"""
+        if self.current_index < len(self.games) - 1:
+            self.current_index += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+    
+    @ui.button(label="📚 Volver a Biblioteca", style=discord.ButtonStyle.secondary, custom_id="back_lib")
+    async def back_to_library(self, interaction: discord.Interaction, button: ui.Button):
+        """Volver a la vista de biblioteca"""
+        await interaction.response.edit_message(
+            embed=self.library_view.get_embed(),
+            view=self.library_view
         )
