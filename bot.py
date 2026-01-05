@@ -19,31 +19,21 @@ bot = commands.Bot(
 # Evento: Bot está listo
 @bot.event
 async def on_ready():
-    print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     print(f'✅ Bot conectado exitosamente!')
-    print(f'👤 Usuario: {bot.user.name}')
-    print(f'🆔 ID: {bot.user.id}')
-    print(f'🌐 Servidores: {len(bot.guilds)}')
-    print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-
-    # Inicializar base de datos
-    from models.database import init_db
+    print(f'Usuario: {bot.user.name}')
+    print(f'ID: {bot.user.id}')
+    
+    # Inicializar base de datos (ya incluye fix_database_schema)
     await init_db()
     
-    # Sincronizar comandos slash
+    # Sincronizar comandos
     try:
-        if config.GUILD_ID:
-            guild = discord.Object(id=int(config.GUILD_ID))
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            print(f'✅ Comandos sincronizados en servidor de prueba')
-        else:
-            await bot.tree.sync()
-            print(f'✅ Comandos sincronizados globalmente')
+        guild = discord.Object(id=config.GUILD_ID)
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        print('✅ Comandos sincronizados')
     except Exception as e:
-        print(f'❌ Error al sincronizar comandos: {e}')
-    
-    print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        print(f'Error sincronizando comandos: {e}')
 
 # Evento: Cuando alguien se une al servidor
 @bot.event

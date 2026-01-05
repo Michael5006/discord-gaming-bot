@@ -278,8 +278,10 @@ class RAWGClient:
             released = game.get('released', '')
             year = released.split('-')[0] if released else 'Unknown'
             
-            # Plataformas
-            platforms_data = game.get('platforms', [])
+            # Plataformas (manejar None)
+            platforms_data = game.get('platforms') or []
+            if not isinstance(platforms_data, list):
+                platforms_data = []
             platforms = []
             has_ps5 = False
             has_ps4 = False

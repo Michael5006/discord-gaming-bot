@@ -31,12 +31,16 @@ class Game:
                     is_recompleted: bool, image_url: str = '') -> bool:
         """Crea un nuevo juego"""
         try:
+            from models.database import get_db
+            
             # Calcular puntos
             points = config.PUNTOS_CATEGORIA[category.lower()]
             if has_platinum:
                 points += config.PUNTOS_CATEGORIA['platino']
             
             db = await get_db()
+            
+            # Usar solo created_at (no submission_date)
             await db.execute('''
                 INSERT INTO games (
                     discord_user_id, username, game_name, category, 
@@ -51,11 +55,10 @@ class Game:
             await db.commit()
             await db.close()
             return True
+            
         except Exception as e:
             print(f'Error creando juego: {e}')
             return False
-        finally:
-            await db.close()
     
     @staticmethod
     async def get_pending() -> list:
