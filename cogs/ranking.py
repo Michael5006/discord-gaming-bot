@@ -17,36 +17,68 @@ class Ranking(commands.Cog):
     async def ranking(self, interaction: discord.Interaction):
         """Muestra el ranking con pestañas interactivas"""
         
-        await interaction.response.defer()
-        
-        # Obtener usuarios y juegos
-        users = await User.get_all_ranked()
-        ranked_users = [user for user in users if user.total_games > 0]
-        
-        if not ranked_users:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['ranking']} Ranking del Concurso",
-                description="Aún no hay participantes con juegos aprobados.",
-                color=config.COLORES['info']
+        try:
+            await interaction.response.defer()
+            
+            print("🔍 [RANKING] Obteniendo usuarios...")
+            
+            # Obtener usuarios y juegos
+            users = await User.get_all_ranked()
+            ranked_users = [user for user in users if user.total_games > 0]
+            
+            print(f"✅ [RANKING] Usuarios encontrados: {len(ranked_users)}")
+            
+            if not ranked_users:
+                embed = discord.Embed(
+                    title=f"{config.EMOJIS['ranking']} Ranking del Concurso",
+                    description="Aún no hay participantes con juegos aprobados.",
+                    color=config.COLORES['info']
+                )
+                await interaction.followup.send(embed=embed)
+                return
+            
+            print("🔍 [RANKING] Obteniendo juegos...")
+            
+            # Obtener todos los juegos aprobados
+            all_games = []
+            for user in ranked_users:
+                games = await Game.get_by_user(user.discord_id, status='APPROVED')
+                all_games.extend(games)
+            
+            print(f"✅ [RANKING] Juegos encontrados: {len(all_games)}")
+            print("🔍 [RANKING] Creando vista con pestañas...")
+            
+            # Crear vista con pestañas
+            from views.ranking_view import RankingTabView
+            
+            view = RankingTabView(ranked_users, all_games)
+            
+            print("🔍 [RANKING] Generando embed...")
+            embed = view.get_embed()
+            
+            print("🔍 [RANKING] Enviando mensaje...")
+            await interaction.followup.send(
+                embed=embed,
+                view=view
             )
-            await interaction.followup.send(embed=embed)
-            return
-        
-        # Obtener todos los juegos aprobados
-        all_games = []
-        for user in ranked_users:
-            games = await Game.get_by_user(user.discord_id, status='APPROVED')
-            all_games.extend(games)
-        
-        # Crear vista con pestañas
-        from views.ranking_view import RankingTabView
-        
-        view = RankingTabView(ranked_users, all_games)
-        
-        await interaction.followup.send(
-            embed=view.get_embed(),
-            view=view
-        )
+            
+            print("✅ [RANKING] Comando completado exitosamente")
+            
+        except Exception as e:
+            print(f"❌ [RANKING] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            error_embed = discord.Embed(
+                title="❌ Error en Ranking",
+                description=f"Hubo un error al cargar el ranking.\n\n```{str(e)[:1000]}```",
+                color=config.COLORES['rechazado']
+            )
+            
+            try:
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except:
+                pass
     
     @app_commands.command(name="mi-posicion", description="Ver tu posición actual en el ranking")
     async def mi_posicion(self, interaction: discord.Interaction):
@@ -461,6 +493,30 @@ class Ranking(commands.Cog):
         
         # Enviar ambos embeds
         await interaction.followup.send(embeds=[embed1, embed2])
+        
+    @ranking.error
+    @mi_posicion.error
+    @estadisticas.error
+    @tablero.error
+    async def ranking_error(self, interaction: discord.Interaction, error):
+        """Maneja errores de comandos de ranking"""
+        print(f"❌ [RANKING ERROR] {error}")
+        import traceback
+        traceback.print_exc()
+        
+        embed = discord.Embed(
+            title="❌ Error",
+            description="Ocurrió un error al ejecutar el comando.",
+            color=config.COLORES['rechazado']
+        )
+        
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except:
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except:
+                pass
 
 
 async def setup(bot):
