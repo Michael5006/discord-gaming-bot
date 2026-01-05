@@ -92,16 +92,22 @@ class Utils(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="ayuda", description="Ver todos los comandos disponibles")
+    @app_commands.command(name="ayuda", description="Muestra el centro de ayuda interactivo")
     async def ayuda(self, interaction: discord.Interaction):
-        """Muestra la lista de comandos disponibles"""
+        """Panel de ayuda interactivo con menú desplegable"""
         
-        is_admin = interaction.user.guild_permissions.administrator
+        # Verificar si es admin
+        is_admin = any(role.id == config.ADMIN_ROLE_ID for role in interaction.user.roles)
         
-        embed = discord.Embed(
-            title="❓ Comandos Disponibles",
-            description="Lista completa de comandos del bot.",
-            color=config.COLORES['info']
+        # Crear vista con select menu
+        from views.help_view import HelpView
+        
+        view = HelpView(is_admin=is_admin)
+        
+        await interaction.response.send_message(
+            embed=view.get_main_embed(),
+            view=view,
+            ephemeral=True  # Solo visible para quien ejecuta el comando
         )
         
         # Comandos para usuarios
