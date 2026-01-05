@@ -17,6 +17,9 @@ RAWG_BASE_URL = 'https://api.rawg.io/api'
 CONTEST_START_DATE = datetime.strptime(os.getenv('CONTEST_START_DATE', '2025-12-25'), '%Y-%m-%d')
 CONTEST_END_DATE = datetime.strptime(os.getenv('CONTEST_END_DATE', '2027-01-01'), '%Y-%m-%d')
 
+# ID del rol de administrador
+ADMIN_ROLE_ID = int(os.getenv('ADMIN_ROLE_ID', '0'))
+
 # Colores para embeds (en hexadecimal)
 COLORES = {
     'retro': 0x3498db,      # Azul

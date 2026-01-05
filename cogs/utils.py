@@ -97,8 +97,9 @@ class Utils(commands.Cog):
         """Panel de ayuda interactivo con menú desplegable"""
         
         try:
-            # Verificar si es admin
-            is_admin = any(role.id == config.ADMIN_ROLE_ID for role in interaction.user.roles)
+            # Verificar si es admin usando la función existente
+            from cogs.admin import is_admin_user
+            is_admin = is_admin_user(interaction.user)
             
             # Crear vista con select menu
             from views.help_view import HelpView
@@ -116,16 +117,16 @@ class Utils(commands.Cog):
             import traceback
             traceback.print_exc()
             
-            # Respuesta de fallback
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"Hubo un error al cargar la ayuda.\n```{str(e)}```",
+                color=config.COLORES['rechazado']
+            )
+            
             try:
-                embed = discord.Embed(
-                    title="❌ Error",
-                    description=f"Hubo un error al cargar la ayuda.\n```{str(e)}```",
-                    color=config.COLORES['rechazado']
-                )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             except:
-                pass
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Utils(bot))

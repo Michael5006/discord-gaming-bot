@@ -6,15 +6,27 @@ from models.game import Game
 from models.user import User
 from models.database import get_db
 
+def is_admin_user(user: discord.Member) -> bool:
+    """Verifica si un usuario es admin (función helper)"""
+    admin_roles = [1316957507982970951]  # Tu ID de rol admin
+    
+    # Verificar por rol O por permisos de administrador
+    has_admin_role = any(role.id in admin_roles for role in user.roles)
+    has_admin_perms = user.guild_permissions.administrator
+    
+    return has_admin_role or has_admin_perms
+
+
+def is_admin(interaction: discord.Interaction) -> bool:
+    """Decorator check para comandos admin"""
+    return is_admin_user(interaction.user)
+
+
 class Admin(commands.Cog):
     """Comandos de administración para gestionar el concurso"""
     
     def __init__(self, bot):
         self.bot = bot
-    
-    def is_admin(interaction: discord.Interaction) -> bool:
-        """Verifica si el usuario tiene permisos de administrador"""
-        return interaction.user.guild_permissions.administrator
     
     @app_commands.command(name="pendientes", description="[ADMIN] Ver todos los juegos pendientes de aprobación")
     @app_commands.check(is_admin)
