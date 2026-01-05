@@ -109,49 +109,6 @@ class Utils(commands.Cog):
             view=view,
             ephemeral=True  # Solo visible para quien ejecuta el comando
         )
-        
-        # Comandos para usuarios
-        user_commands = (
-            "`/registrar` - Registrar un juego completado\n"
-            "`/mis-juegos` - Ver tus juegos aprobados\n"
-            "`/mis-pendientes` - Ver juegos pendientes de aprobación\n"
-            "`/eliminar-pendiente` - Eliminar uno de tus juegos pendientes\n"
-            "`/ranking` - Ver el ranking general\n"
-            "`/mi-posicion` - Ver tu posición actual\n"
-            "`/estadisticas` - Ver estadísticas detalladas\n"
-            "`/reglas` - Ver las reglas del concurso\n"
-            "`/ayuda` - Mostrar este mensaje\n"
-            "`/ping` - Verificar si el bot funciona\n"
-            "`/info` - Información sobre el bot"
-        )
-        
-        embed.add_field(
-            name="👤 Comandos Generales",
-            value=user_commands,
-            inline=False
-        )
-        
-        # Comandos de admin
-        if is_admin:
-            admin_commands = (
-                "`/pendientes` - Ver juegos pendientes\n"
-                "`/revisar [id]` - Revisar un juego\n"
-                "`/aprobar [id]` - Aprobar un juego\n"
-                "`/rechazar [id]` - Rechazar un juego\n"
-                "`/editar-juego [id]` - Editar un juego aprobado\n"
-                "`/eliminar-juego` - Eliminar cualquier juego\n"
-                "`/marcar-elkie` - Marcar/desmarcar Elkie"
-            )
-            
-            embed.add_field(
-                name="⚙️ Comandos de Admin",
-                value=admin_commands,
-                inline=False
-            )
-        
-        embed.set_footer(text="¿Dudas? Pregunta a un admin")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Utils(bot))
