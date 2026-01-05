@@ -7,7 +7,7 @@ class Game:
     
     def __init__(self, id, discord_user_id, username, game_name, category,
                  platform, has_platinum, is_recompleted, total_points, 
-                 status, created_at, reviewed_by, reviewed_at, rejection_reason,
+                 status, submission_date, reviewed_by, reviewed_at, rejection_reason,
                  image_url=''):
         self.id = id
         self.discord_user_id = discord_user_id
@@ -19,7 +19,7 @@ class Game:
         self.is_recompleted = is_recompleted
         self.total_points = total_points
         self.status = status
-        self.created_at = created_at
+        self.submission_date = submission_date  # Cambiar de created_at
         self.reviewed_by = reviewed_by
         self.reviewed_at = reviewed_at
         self.rejection_reason = rejection_reason
@@ -40,7 +40,6 @@ class Game:
             
             db = await get_db()
             
-            # Usar solo created_at (no submission_date)
             await db.execute('''
                 INSERT INTO games (
                     discord_user_id, username, game_name, category, 
@@ -68,11 +67,11 @@ class Game:
             cursor = await db.execute('''
                 SELECT id, discord_user_id, username, game_name, category,
                        platform, has_platinum, is_recompleted, total_points,
-                       status, created_at, reviewed_by, reviewed_at, 
+                       status, submission_date, reviewed_by, reviewed_at, 
                        rejection_reason, image_url
                 FROM games
                 WHERE status = 'PENDING'
-                ORDER BY created_at ASC
+                ORDER BY submission_date ASC
             ''')
             
             rows = await cursor.fetchall()
@@ -97,21 +96,21 @@ class Game:
                 cursor = await db.execute('''
                     SELECT id, discord_user_id, username, game_name, category,
                            platform, has_platinum, is_recompleted, total_points,
-                           status, created_at, reviewed_by, reviewed_at, 
+                           status, submission_date, reviewed_by, reviewed_at, 
                            rejection_reason, image_url
                     FROM games
                     WHERE discord_user_id = ? AND status = ?
-                    ORDER BY created_at DESC
+                    ORDER BY submission_date DESC
                 ''', (discord_user_id, status))
             else:
                 cursor = await db.execute('''
                     SELECT id, discord_user_id, username, game_name, category,
                            platform, has_platinum, is_recompleted, total_points,
-                           status, created_at, reviewed_by, reviewed_at, 
+                           status, submission_date, reviewed_by, reviewed_at, 
                            rejection_reason, image_url
                     FROM games
                     WHERE discord_user_id = ?
-                    ORDER BY created_at DESC
+                    ORDER BY submission_date DESC
                 ''', (discord_user_id,))
             
             rows = await cursor.fetchall()
@@ -134,7 +133,7 @@ class Game:
             cursor = await db.execute('''
                 SELECT id, discord_user_id, username, game_name, category,
                        platform, has_platinum, is_recompleted, total_points,
-                       status, created_at, reviewed_by, reviewed_at, 
+                       status, submission_date, reviewed_by, reviewed_at, 
                        rejection_reason, image_url
                 FROM games
                 WHERE id = ?

@@ -25,11 +25,11 @@ async def init_db():
                 total_points INTEGER DEFAULT 0,
                 total_games INTEGER DEFAULT 0,
                 is_elkie INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        # Tabla de juegos
+        # Tabla de juegos (usando submission_date en lugar de created_at)
         await db.execute('''
             CREATE TABLE IF NOT EXISTS games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +42,7 @@ async def init_db():
                 is_recompleted INTEGER DEFAULT 0,
                 total_points INTEGER NOT NULL,
                 status TEXT DEFAULT 'PENDING',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 reviewed_by INTEGER,
                 reviewed_at TIMESTAMP,
                 rejection_reason TEXT,
@@ -54,11 +54,11 @@ async def init_db():
         
         print('✅ Base de datos inicializada correctamente')
         
-        # Ejecutar corrección de esquema
+        # Verificar esquema
         await fix_database_schema()
         
     except Exception as e:
-        print(f"Error inicializando base de datos: {e}")
+        print(f"❌ Error inicializando base de datos: {e}")
     finally:
         await db.close()
 
@@ -68,7 +68,7 @@ async def fix_database_schema():
     try:
         db = await get_db()
         
-        # Obtener columnas actuales de la tabla games
+        # Obtener columnas actuales
         cursor = await db.execute("PRAGMA table_info(games)")
         columns = await cursor.fetchall()
         column_names = [col[1] for col in columns]
@@ -77,27 +77,20 @@ async def fix_database_schema():
         
         cambios = False
         
-        # Verificar y agregar image_url
+        # Agregar image_url si falta
         if 'image_url' not in column_names:
             print("⚙️ Agregando columna 'image_url'...")
             await db.execute("ALTER TABLE games ADD COLUMN image_url TEXT DEFAULT ''")
             cambios = True
             print("✅ Columna 'image_url' agregada")
         
-        # Verificar y agregar created_at si no existe
-        if 'created_at' not in column_names:
-            print("⚙️ Agregando columna 'created_at'...")
-            await db.execute("ALTER TABLE games ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            cambios = True
-            print("✅ Columna 'created_at' agregada")
-        
         if cambios:
             await db.commit()
-            print("✅ Esquema de BD actualizado correctamente")
+            print("✅ Esquema de BD actualizado")
         else:
             print("✅ Esquema de BD está correcto")
         
         await db.close()
         
     except Exception as e:
-        print(f"⚠️ Error verificando esquema de BD: {e}")
+        print(f"⚠️ Error verificando esquema: {e}")
