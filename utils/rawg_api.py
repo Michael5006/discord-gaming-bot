@@ -78,7 +78,7 @@ class RAWGClient:
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'exclude_additions': 'false'
+                'exclude_additions': 'true'
             }
             
             response = requests.get(
@@ -186,22 +186,17 @@ class RAWGClient:
         max_added = max((game.get('added') or 0) for game in games)
         max_metacritic = max((game.get('metacritic') or 0) for game in games)
         
-        score = max_added * 0.5
-        
-        #Busqueda Exacta
-        if query.lower() in base_name.lower():
-            score += 100000
-        
         #Normalizar meta
-        if max_metacritic is None:
-            max_metacritic = 0
+        max_metacritic = max_metacritic or 0  # Más simple y seguro
+        
+        score = max_added * 2
         
         # Bonus por metacritic alto
-        if max_metacritic >= 90:
+        if max_metacritic and max_metacritic >= 90:
             score += 50000
-        elif max_metacritic >= 80:
+        elif max_metacritic and max_metacritic >= 80:
             score += 30000
-        elif max_metacritic >= 70:
+        elif max_metacritic and max_metacritic >= 70:
             score += 10000
         
         # BONUS MASIVO por coincidencia exacta o muy cercana
