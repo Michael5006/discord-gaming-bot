@@ -315,184 +315,62 @@ class Ranking(commands.Cog):
 
     @app_commands.command(name="tablero", description="Ver el dashboard completo del concurso")
     async def tablero(self, interaction: discord.Interaction):
-        """Muestra un dashboard visual con todas las estadísticas del grupo"""
+        """Dashboard interactivo con menú desplegable"""
         
-        await interaction.response.defer()
-        
-        # Obtener todos los usuarios
-        users = await User.get_all_ranked()
-        ranked_users = [user for user in users if user.total_games > 0]
-        
-        if not ranked_users:
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['ranking']} Dashboard del Concurso",
-                description="Aún no hay actividad. ¡Sé el primero en registrar un juego!",
-                color=config.COLORES['info']
+        try:
+            await interaction.response.defer()
+            
+            print("🔍 [TABLERO] Obteniendo datos...")
+            
+            # Obtener todos los usuarios
+            users = await User.get_all_ranked()
+            ranked_users = [user for user in users if user.total_games > 0]
+            
+            if not ranked_users:
+                embed = discord.Embed(
+                    title=f"{config.EMOJIS['ranking']} Dashboard del Concurso",
+                    description="Aún no hay actividad. ¡Sé el primero en registrar un juego!",
+                    color=config.COLORES['info']
+                )
+                await interaction.followup.send(embed=embed)
+                return
+            
+            # Obtener todos los juegos
+            all_games = []
+            for user in ranked_users:
+                games = await Game.get_by_user(user.discord_id, status='APPROVED')
+                all_games.extend(games)
+            
+            print(f"✅ [TABLERO] {len(ranked_users)} usuarios, {len(all_games)} juegos")
+            
+            # Crear vista con select menu
+            from views.dashboard_view import DashboardView, RefreshButton
+            
+            view = DashboardView(ranked_users, all_games)
+            view.add_item(RefreshButton())  # Agregar botón de actualizar
+            
+            await interaction.followup.send(
+                embed=view.get_main_embed(),
+                view=view
             )
-            await interaction.followup.send(embed=embed)
-            return
-        
-        # ==================== EMBED 1: RANKING Y ESTADÍSTICAS ====================
-        embed1 = discord.Embed(
-            title=f"🏆 DASHBOARD DEL CONCURSO 2025-2027",
-            color=config.COLORES['info']
-        )
-        
-        # TOP 5 RANKING (más compacto)
-        ranking_text = ""
-        medals = {1: '🥇', 2: '🥈', 3: '🥉'}
-        
-        for i, user in enumerate(ranked_users[:5], 1):
-            medal = medals.get(i, f'**{i}.**')
-            elkie_marker = " 👑" if user.is_elkie else ""
             
-            # Barra simple y limpia
-            if ranked_users[0].total_points > 0:
-                percentage = int((user.total_points / ranked_users[0].total_points) * 100)
-                filled = percentage // 10
-                bar = "▰" * filled + "▱" * (10 - filled)
-            else:
-                bar = "▱" * 10
+            print("✅ [TABLERO] Comando completado")
             
-            ranking_text += f"{medal} **{user.username}**{elkie_marker}\n"
-            ranking_text += f"{bar} {user.total_points} pts • {user.total_games} juegos\n\n"
-        
-        embed1.add_field(
-            name="👥 TOP 5 PARTICIPANTES",
-            value=ranking_text,
-            inline=False
-        )
-        
-        # ESTADÍSTICAS GENERALES (más compactas)
-        all_games = []
-        for user in ranked_users:
-            games = await Game.get_by_user(user.discord_id, status='APPROVED')
-            all_games.extend(games)
-        
-        total_games = len(all_games)
-        total_points = sum(user.total_points for user in ranked_users)
-        total_platinos = sum(1 for game in all_games if game.has_platinum)
-        total_recompletados = sum(1 for game in all_games if game.is_recompleted)
-        promedio = round(total_games / len(ranked_users), 1) if ranked_users else 0
-        
-        stats_text = (
-            f"🎮 **{total_games}** juegos totales\n"
-            f"💰 **{total_points}** puntos totales\n"
-            f"🏆 **{total_platinos}** platinos\n"
-            f"🔄 **{total_recompletados}** re-completados\n"
-            f"📊 **{promedio}** juegos/persona"
-        )
-        
-        embed1.add_field(
-            name="📈 RESUMEN GENERAL",
-            value=stats_text,
-            inline=True
-        )
-        
-        # RÉCORDS (compacto)
-        most_games = max(ranked_users, key=lambda x: x.total_games)
-        most_points = max(ranked_users, key=lambda x: x.total_points)
-        
-        records_text = (
-            f"🎮 Más juegos:\n**{most_games.username}** ({most_games.total_games})\n\n"
-            f"💰 Más puntos:\n**{most_points.username}** ({most_points.total_points})"
-        )
-        
-        embed1.add_field(
-            name="🏅 RÉCORDS",
-            value=records_text,
-            inline=True
-        )
-        
-        # PREMIOS (footer del primer embed)
-        if ranked_users and ranked_users[0].is_elkie:
-            premio_footer = "🏆 Premios: 1° = $30 USD • 2° = $20 USD (Regla Elkie activa)"
-        else:
-            premio_footer = "🏆 Premio: 1er lugar = $30 USD"
-        
-        embed1.set_footer(text=premio_footer)
-        
-        # ==================== EMBED 2: DISTRIBUCIÓN Y PROGRESO ====================
-        embed2 = discord.Embed(
-            title="📊 ANÁLISIS DETALLADO",
-            color=config.COLORES['aprobado']
-        )
-        
-        # DISTRIBUCIÓN POR CATEGORÍA (barras limpias)
-        categories = {}
-        platforms = {}
-        
-        for game in all_games:
-            categories[game.category] = categories.get(game.category, 0) + 1
-            platforms[game.platform] = platforms.get(game.platform, 0) + 1
-        
-        if categories:
-            cat_text = ""
-            sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
-            for cat, count in sorted_cats:
-                emoji = config.EMOJIS.get(cat.lower(), '🎮')
-                percentage = round((count / total_games) * 100)
-                filled = percentage // 10
-                bar = "▰" * filled + "▱" * (10 - filled)
-                cat_text += f"{emoji} {cat}: {bar} {percentage}% ({count})\n"
+        except Exception as e:
+            print(f"❌ [TABLERO] Error: {e}")
+            import traceback
+            traceback.print_exc()
             
-            embed2.add_field(
-                name="🎯 Por Categoría",
-                value=cat_text,
-                inline=False
+            error_embed = discord.Embed(
+                title="❌ Error en Tablero",
+                description=f"Hubo un error al cargar el dashboard.\n\n```{str(e)[:1000]}```",
+                color=config.COLORES['rechazado']
             )
-        
-        # DISTRIBUCIÓN POR PLATAFORMA
-        if platforms:
-            plat_text = ""
-            sorted_plats = sorted(platforms.items(), key=lambda x: x[1], reverse=True)
-            for plat, count in sorted_plats:
-                emoji = config.EMOJIS.get(plat.lower(), '🎮')
-                percentage = round((count / total_games) * 100)
-                filled = percentage // 10
-                bar = "▰" * filled + "▱" * (10 - filled)
-                plat_text += f"{emoji} {plat}: {bar} {percentage}% ({count})\n"
             
-            embed2.add_field(
-                name="💻 Por Plataforma",
-                value=plat_text,
-                inline=False
-            )
-        
-        # PROGRESO TEMPORAL (compacto)
-        from datetime import datetime
-        now = datetime.now()
-        days_passed = max(1, (now - config.CONTEST_START_DATE).days)
-        days_total = (config.CONTEST_END_DATE - config.CONTEST_START_DATE).days
-        days_remaining = (config.CONTEST_END_DATE - now).days
-        
-        progress_pct = round((days_passed / days_total) * 100) if days_total > 0 else 0
-        filled = progress_pct // 10
-        progress_bar = "▰" * filled + "▱" * (10 - filled)
-        
-        # Proyección
-        rate_per_day = total_games / days_passed
-        projected_total = round(rate_per_day * days_total)
-        
-        tiempo_text = (
-            f"⏰ {progress_bar} **{progress_pct}%**\n\n"
-            f"📅 Días transcurridos: **{days_passed}**\n"
-            f"⏳ Días restantes: **{days_remaining}**\n\n"
-            f"📈 Ritmo: **{round(rate_per_day, 2)}** juegos/día\n"
-            f"🎯 Proyección final: **~{projected_total}** juegos"
-        )
-        
-        embed2.add_field(
-            name="📆 PROGRESO DEL CONCURSO",
-            value=tiempo_text,
-            inline=False
-        )
-        
-        # Footer con fecha
-        embed2.set_footer(text=f"Actualizado: {now.strftime('%d/%m/%Y %H:%M')}")
-        
-        # Enviar ambos embeds
-        await interaction.followup.send(embeds=[embed1, embed2])
+            try:
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except:
+                pass
         
     @ranking.error
     @mi_posicion.error
