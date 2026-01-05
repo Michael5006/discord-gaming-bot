@@ -324,43 +324,47 @@ class RAWGClient:
             return None
     ############
     def _detect_category(self, game: Dict, year: str, metacritic: int) -> str:
-        """Detecta la categoría basándose en Género > Publisher > Franquicia"""
         try:
-            # 1. RETRO: Prioridad absoluta por año
-            if year.isdigit() and int(year) <= 2007:
+            # 1. RETRO: Prioridad por año
+            if year.isdigit() and int(year) <= 2005:
                 return 'Retro'
-
-            # Extraer datos para analizar
-            game_name_lower = game.get('name', '').lower()
+            
+            name_lower = game.get('name', '').lower()
             genres = [g.get('name', '').lower() for g in game.get('genres', [])]
             tags = [t.get('name', '').lower() for t in game.get('tags', [])]
             publishers = [p.get('name', '').lower() for p in game.get('publishers', [])]
             developers = [d.get('name', '').lower() for d in game.get('developers', [])]
 
-            # --- PASO 1: ¿ES AAA POR EMPRESA O FRANQUICIA? ---
-            # Si el publisher está en tu lista de gigantes, es AAA sí o sí.
-            is_aaa_brand = any(f in game_name_lower for f in self.aaa_franchises)
-            is_aaa_pub = any(any(aaa in p for aaa in self.aaa_publishers) for p in publishers + developers)
+            # --- DEBUG: Esto imprimirá en tu consola qué está viendo el bot ---
+            # print(f"Analizando: {name_lower} | Géneros: {genres} | Publishers: {publishers}")
 
-            if is_aaa_pub or is_aaa_brand:
-                return 'Aaa'
-
-            # --- PASO 2: ¿ES INDIE? (La salvación para Hollow Knight y V Rising) ---
-            # Si RAWG dice que es género Indie o tiene el tag, lo aceptamos.
+            # --- PASO 1: ¿ES INDIE? (Ahora va PRIMERO) ---
+            # Si RAWG dice que es Indie, le creemos a muerte (ej. Hollow Knight, V Rising)
             is_indie_by_rawg = 'indie' in genres or 'indie' in tags
             is_indie_by_list = any(any(i in p for i in self.indie_publishers) for p in publishers + developers)
 
+            # --- PASO 2: ¿ES AAA? ---
+            is_aaa_brand = any(f in name_lower for f in self.aaa_franchises)
+            is_aaa_pub = any(any(aaa in p for aaa in self.aaa_publishers) for p in publishers + developers)
+
+            # Lógica de decisión:
+            # Si es de una empresa gigante (Sony, Ubisoft, etc), es AAA aunque diga indie
+            if is_aaa_pub or is_aaa_brand:
+                return 'Aaa'
+            
+            # Si no es empresa gigante y RAWG dice que es indie, es INDIE
             if is_indie_by_rawg or is_indie_by_list:
-            # Importante: No verificamos popularidad aquí. 
-            # Si es indie, da igual si lo juegan 5 millones de personas.
                 return 'Indie'
 
-            # 4. CASO DEFAULT: Todo lo que no es indie obvio ni AAA gigante, es AA
-            # Esto cubrirá juegos medianos o éxitos como V Rising si no tienen tags claros.
+            # --- PASO 3: ¿POR QUÉ HOLLOW KNIGHT SALE AAA? ---
+            # Si aún tienes líneas que digan "if added > 100000" o "if metacritic > 80",
+            # BORRALAS. Esas reglas son las que confunden a los indies buenos con AAA.
+
+            # Si no es AAA ni Indie, es el término medio: AA
             return 'Aa'
 
         except Exception as e:
-            print(f"Error en detección: {e}")
+            print(f'Error detectando categoría: {e}')
             return 'Aa'
         ###############
     
