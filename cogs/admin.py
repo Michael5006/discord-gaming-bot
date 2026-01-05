@@ -867,6 +867,220 @@ class Admin(commands.Cog):
         
         return choices
     
+    @app_commands.command(name="modificar-pendiente", description="[ADMIN] Modificar un juego pendiente antes de aprobar")
+    @app_commands.describe(
+        usuario="Usuario dueño del juego",
+        juego="Juego pendiente a modificar",
+        categoria="Nueva categoría (opcional)",
+        plataforma="Nueva plataforma (opcional)",
+        platino="¿Tiene platino? (opcional)"
+    )
+    @app_commands.choices(categoria=[
+        app_commands.Choice(name=f"{config.EMOJIS['retro']} Retro (1 punto)", value="Retro"),
+        app_commands.Choice(name=f"{config.EMOJIS['indie']} Indie (1 punto)", value="Indie"),
+        app_commands.Choice(name=f"{config.EMOJIS['aa']} AA (2 puntos)", value="AA"),
+        app_commands.Choice(name=f"{config.EMOJIS['aaa']} AAA (3 puntos)", value="AAA"),
+    ])
+    @app_commands.choices(plataforma=[
+        app_commands.Choice(name=f"{config.EMOJIS['ps5']} PlayStation 5", value="PS5"),
+        app_commands.Choice(name=f"{config.EMOJIS['steam']} Steam", value="Steam"),
+    ])
+    @app_commands.choices(platino=[
+        app_commands.Choice(name=f"{config.EMOJIS['platino']} Sí", value="si"),
+        app_commands.Choice(name="❌ No", value="no"),
+    ])
+    @app_commands.check(is_admin)
+    async def modificar_pendiente(
+        self,
+        interaction: discord.Interaction,
+        usuario: discord.User,
+        juego: str,
+        categoria: app_commands.Choice[str] = None,
+        plataforma: app_commands.Choice[str] = None,
+        platino: app_commands.Choice[str] = None
+    ):
+        """Modifica un juego pendiente antes de aprobarlo"""
+        
+        # Extraer ID del juego
+        try:
+            game_id = int(juego.split(':')[0])
+        except:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="Error al procesar el juego seleccionado.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Obtener el juego
+        game = await Game.get_by_id(game_id)
+        
+        if not game:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description="No se encontró el juego.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que sea del usuario y esté pendiente
+        if game.discord_user_id != usuario.id:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['error']} Error",
+                description=f"Este juego no pertenece a {usuario.name}.",
+                color=config.COLORES['rechazado']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        if game.status != 'PENDING':
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['advertencia']} Error",
+                description="Solo puedes modificar juegos pendientes.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Verificar que haya algo que modificar
+        if not any([categoria, plataforma, platino]):
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['advertencia']} Sin Cambios",
+                description="No especificaste ningún campo para modificar.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Preparar valores
+        nueva_categoria = categoria.value if categoria else game.category
+        nueva_plataforma = plataforma.value if plataforma else game.platform
+        nuevo_platino = (platino.value == "si") if platino else game.has_platinum
+        
+        # Recalcular puntos
+        nuevos_puntos = config.PUNTOS_CATEGORIA[nueva_categoria.lower()]
+        if nuevo_platino:
+            nuevos_puntos += config.PUNTOS_CATEGORIA['platino']
+        
+        # Registrar cambios
+        cambios = []
+        if categoria and categoria.value != game.category:
+            cambios.append(f"**Categoría:** {game.category} → {categoria.value}")
+        if plataforma and plataforma.value != game.platform:
+            cambios.append(f"**Plataforma:** {game.platform} → {plataforma.value}")
+        if platino:
+            nuevo_estado = "Sí" if platino.value == "si" else "No"
+            viejo_estado = "Sí" if game.has_platinum else "No"
+            if nuevo_estado != viejo_estado:
+                cambios.append(f"**Platino:** {viejo_estado} → {nuevo_estado}")
+        
+        if not cambios:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['info']} Sin Cambios",
+                description="Los valores especificados son iguales a los actuales.",
+                color=config.COLORES['info']
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Actualizar en la BD
+        db = await get_db()
+        try:
+            await db.execute('''
+                UPDATE games
+                SET category = ?,
+                    platform = ?,
+                    has_platinum = ?,
+                    total_points = ?
+                WHERE id = ?
+            ''', (nueva_categoria, nueva_plataforma, int(nuevo_platino), nuevos_puntos, game_id))
+            await db.commit()
+            
+            # Embed de confirmación
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['editar']} Juego Modificado",
+                description=f"**{game.game_name}** ha sido modificado.",
+                color=config.COLORES['aprobado']
+            )
+            
+            embed.add_field(
+                name="📝 Cambios Realizados",
+                value="\n".join(cambios),
+                inline=False
+            )
+            
+            embed.add_field(
+                name=f"{config.EMOJIS['puntos']} Puntos",
+                value=f"{game.total_points} pts → **{nuevos_puntos} pts**",
+                inline=True
+            )
+            
+            embed.add_field(
+                name=f"{config.EMOJIS['usuario']} Usuario",
+                value=usuario.name,
+                inline=True
+            )
+            
+            embed.set_footer(text=f"Modificado por {interaction.user.name} • Aún pendiente de aprobación")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            # Notificar al usuario
+            try:
+                notif_embed = discord.Embed(
+                    title=f"{config.EMOJIS['info']} Tu Juego Fue Modificado",
+                    description=f"Un admin modificó tu juego pendiente **{game.game_name}**.",
+                    color=config.COLORES['info']
+                )
+                notif_embed.add_field(
+                    name="Cambios",
+                    value="\n".join(cambios),
+                    inline=False
+                )
+                await usuario.send(embed=notif_embed)
+            except:
+                pass
+            
+        finally:
+            await db.close()
+    
+    @modificar_pendiente.autocomplete('juego')
+    async def modificar_pendiente_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocompletado para juegos pendientes del usuario"""
+        
+        usuario = interaction.namespace.usuario
+        
+        if not usuario:
+            return []
+        
+        # Obtener juegos pendientes del usuario
+        games = await Game.get_by_user(usuario.id, status='PENDING')
+        
+        if not games:
+            return [app_commands.Choice(name="Este usuario no tiene juegos pendientes", value="0:ninguno")]
+        
+        # Filtrar
+        filtered_games = [
+            game for game in games
+            if current.lower() in game.game_name.lower()
+        ][:25]
+        
+        # Crear opciones
+        choices = []
+        for game in filtered_games:
+            platino_text = " 🏆" if game.has_platinum else ""
+            choice_name = f"{game.game_name}{platino_text} - {game.category} ({game.total_points}pts)"
+            choice_value = f"{game.id}:{game.game_name}"
+            choices.append(app_commands.Choice(name=choice_name[:100], value=choice_value[:100]))
+        
+        return choices
+    
     @pendientes.error
     @revisar.error
     @aprobar.error
@@ -874,6 +1088,7 @@ class Admin(commands.Cog):
     @marcar_elkie.error
     @editar_juego.error
     @eliminar_juego.error
+    @modificar_pendiente.error
     async def admin_error(self, interaction: discord.Interaction, error):
         """Maneja errores de permisos de admin"""
         if isinstance(error, app_commands.CheckFailure):

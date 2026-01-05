@@ -15,8 +15,7 @@ class Games(commands.Cog):
     @app_commands.describe(
         nombre="Busca el juego por nombre",
         plataforma="Plataforma en la que lo jugaste",
-        platino="¿Obtuviste el platino/100%?",
-        recompletado="¿Es un juego que ya habías completado antes?"
+        platino="¿Obtuviste el platino/100%?"
     )
     @app_commands.choices(plataforma=[
         app_commands.Choice(name=f"{config.EMOJIS['ps5']} PlayStation 5", value="PS5"),
@@ -26,17 +25,12 @@ class Games(commands.Cog):
         app_commands.Choice(name=f"{config.EMOJIS['platino']} Sí", value="si"),
         app_commands.Choice(name="❌ No", value="no"),
     ])
-    @app_commands.choices(recompletado=[
-        app_commands.Choice(name="🆕 No, es primera vez", value="no"),
-        app_commands.Choice(name="🔄 Sí, lo re-completé", value="si"),
-    ])
     async def registrar(
         self,
         interaction: discord.Interaction,
         nombre: str,
         plataforma: app_commands.Choice[str],
-        platino: app_commands.Choice[str],
-        recompletado: app_commands.Choice[str]
+        platino: app_commands.Choice[str]
     ):
         """Registra un juego completado usando la base de datos de RAWG"""
         
@@ -49,7 +43,6 @@ class Games(commands.Cog):
                 game_id = int(parts[0])
                 game_name = parts[1]
             else:
-                # Permitir registro manual si no viene de RAWG
                 game_id = None
                 game_name = nombre
         except:
@@ -88,7 +81,6 @@ class Games(commands.Cog):
             # Validar que el juego esté en la plataforma seleccionada
             selected_platform = plataforma.value
             if selected_platform not in available_platforms:
-                # Si seleccionó PS5 pero solo está en PS4, permitirlo
                 if selected_platform == 'PS5' and 'PS4' not in [p.get('platform', {}).get('name', '') for p in platforms_data]:
                     embed = discord.Embed(
                         title=f"{config.EMOJIS['advertencia']} Plataforma No Disponible",
@@ -120,33 +112,21 @@ class Games(commands.Cog):
             game_image = game_data.get('background_image', '')
             
         else:
-            # Registro manual (fallback si no viene de RAWG)
+            # Registro manual
             nombre_oficial = game_name
             year = 'Unknown'
-            categoria_nombre = 'AA'  # Default
+            categoria_nombre = 'AA'
             game_image = ''
         
         # Crear/obtener usuario
         await User.get_or_create(interaction.user.id, interaction.user.name)
-        
-        # Verificar si ya tiene este juego aprobado (para detectar re-completado)
-        existing_games = await Game.get_by_user(interaction.user.id, status='APPROVED')
-        is_recompletado = recompletado.value == "si"
-        
-        # Auto-detectar re-completado
-        for existing_game in existing_games:
-            if existing_game.game_name.lower() == nombre_oficial.lower():
-                if recompletado.value == "no":
-                    # Preguntar si quiere marcarlo como re-completado
-                    is_recompletado = True
-                break
         
         # Calcular puntos
         puntos_categoria = config.PUNTOS_CATEGORIA[categoria_nombre.lower()]
         puntos_platino = config.PUNTOS_CATEGORIA['platino'] if platino.value == "si" else 0
         puntos_totales = puntos_categoria + puntos_platino
         
-        # Registrar el juego
+        # Registrar el juego (SIEMPRE is_recompleted = False)
         has_platinum = platino.value == "si"
         success = await Game.create(
             discord_user_id=interaction.user.id,
@@ -155,7 +135,7 @@ class Games(commands.Cog):
             category=categoria_nombre,
             platform=plataforma.value,
             has_platinum=has_platinum,
-            is_recompleted=is_recompletado
+            is_recompleted=False  # ← SIEMPRE FALSE
         )
         
         if success:
@@ -179,9 +159,6 @@ class Games(commands.Cog):
             
             if has_platinum:
                 info_text += f"\n{config.EMOJIS['platino']} **Platino:** Sí"
-            
-            if is_recompletado:
-                info_text += f"\n🔄 **Re-completado:** Sí"
             
             embed.add_field(
                 name="📋 Información",
@@ -211,7 +188,7 @@ class Games(commands.Cog):
                 color=config.COLORES['rechazado']
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
-    
+    ######################################################    
     @registrar.autocomplete('nombre')
     async def nombre_autocomplete(
         self,
