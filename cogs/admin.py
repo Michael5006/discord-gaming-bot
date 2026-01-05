@@ -1081,6 +1081,85 @@ class Admin(commands.Cog):
         
         return choices
     
+    @app_commands.command(name="fix-imagenes", description="[ADMIN] Agregar imágenes a juegos que no las tienen")
+    @app_commands.check(is_admin)
+    async def fix_imagenes(self, interaction: discord.Interaction):
+        """Busca y agrega imágenes faltantes automáticamente"""
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        from utils.rawg_api import rawg_client
+        from models.database import get_db
+        
+        # Obtener juegos sin imagen
+        db = await get_db()
+        cursor = await db.execute('''
+            SELECT id, game_name, evidence_url
+            FROM games
+            WHERE evidence_url IS NULL OR evidence_url = ''
+        ''')
+        
+        games_sin_imagen = await cursor.fetchall()
+        
+        if not games_sin_imagen:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['exito']} Todo Correcto",
+                description="Todos los juegos ya tienen imágenes.",
+                color=config.COLORES['aprobado']
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            await db.close()
+            return
+        
+        # Buscar y actualizar imágenes
+        actualizados = 0
+        no_encontrados = []
+        
+        for game_id, game_name, current_url in games_sin_imagen:
+            # Buscar en RAWG
+            results = rawg_client.search_games(game_name, limit=1)
+            
+            if results and results[0]['image']:
+                image_url = results[0]['image']
+                
+                # Actualizar en BD
+                await db.execute('''
+                    UPDATE games
+                    SET evidence_url = ?
+                    WHERE id = ?
+                ''', (image_url, game_id))
+                
+                actualizados += 1
+                print(f"✅ Actualizado: {game_name}")
+            else:
+                no_encontrados.append(game_name)
+                print(f"⚠️ No encontrado: {game_name}")
+        
+        await db.commit()
+        await db.close()
+        
+        # Embed de resultados
+        embed = discord.Embed(
+            title=f"{config.EMOJIS['exito']} Imágenes Actualizadas",
+            description=f"Se procesaron {len(games_sin_imagen)} juegos.",
+            color=config.COLORES['aprobado']
+        )
+        
+        embed.add_field(
+            name="✅ Actualizados",
+            value=f"**{actualizados}** juegos ahora tienen imágenes",
+            inline=True
+        )
+        
+        if no_encontrados:
+            embed.add_field(
+                name="⚠️ No encontrados",
+                value="\n".join(f"• {name}" for name in no_encontrados[:5]),
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
     @pendientes.error
     @revisar.error
     @aprobar.error
@@ -1089,6 +1168,7 @@ class Admin(commands.Cog):
     @editar_juego.error
     @eliminar_juego.error
     @modificar_pendiente.error
+    @fix_imagenes.error
     async def admin_error(self, interaction: discord.Interaction, error):
         """Maneja errores de permisos de admin"""
         if isinstance(error, app_commands.CheckFailure):
