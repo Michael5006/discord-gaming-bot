@@ -301,7 +301,7 @@ class RankingTabView(ui.View):
 class GameLibraryView(ui.View):
     """Vista de biblioteca - Lista de juegos con imágenes"""
     
-    def __init__(self, user: User, games: list, parent_view: RankingView):
+    def __init__(self, user: User, games: list, parent_view: RankingTabView):
         super().__init__(timeout=180)
         self.user = user
         self.games = games
