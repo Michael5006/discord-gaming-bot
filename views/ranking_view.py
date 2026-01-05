@@ -57,38 +57,59 @@ class RankingTabView(ui.View):
         
         embed = discord.Embed(
             title="🏆 RANKING DEL CONCURSO 2025-2027",
-            description=f"**👥 Top Players** • Página {self.players_page + 1}/{self.max_pages}",
             color=config.COLORES['info']
         )
         
+        # Header simple
+        if self.max_pages > 1:
+            header = f"**👥 TOP 5 PARTICIPANTES** • Página {self.players_page + 1}/{self.max_pages}"
+        else:
+            header = "**👥 TOP 5 PARTICIPANTES**"
+        
+        embed.description = header
+        
+        # Construir ranking limpio
+        ranking_text = ""
         medals = {0: '🥇', 1: '🥈', 2: '🥉'}
         
         for i, user in enumerate(page_users):
             actual_position = start_idx + i
-            medal = medals.get(actual_position, f'**{actual_position + 1}.**')
+            position_num = actual_position + 1
+            medal = medals.get(actual_position, '')
             elkie_marker = " 👑" if user.is_elkie else ""
             
+            # Calcular porcentaje y barra
             if self.users[0].total_points > 0:
                 percentage = int((user.total_points / self.users[0].total_points) * 100)
                 filled = percentage // 10
                 bar = "▰" * filled + "▱" * (10 - filled)
+                bar_text = f"{bar} {percentage}%"
             else:
-                bar = "▱" * 10
+                bar_text = "▱" * 10 + " 0%"
             
-            value = f"{bar}\n"
-            value += f"💰 **{user.total_points}** pts • 🎮 **{user.total_games}** juegos{elkie_marker}\n"
-            value += f"*Click 📚 para ver su biblioteca*"
-            
-            embed.add_field(
-                name=f"{medal} {user.username}",
-                value=value,
-                inline=False
-            )
+            # Formato limpio
+            ranking_text += f"\n**{position_num}.** {medal} **{user.username}**{elkie_marker}\n"
+            ranking_text += f"{bar_text}\n"
+            ranking_text += f"💰 {user.total_points} pts  •  🎮 {user.total_games} juego{'s' if user.total_games != 1 else ''}\n"
         
+        embed.add_field(
+            name="",
+            value=ranking_text,
+            inline=False
+        )
+        
+        # Footer con separador visual
         total_players = len(self.users)
         total_games = sum(u.total_games for u in self.users)
         
-        embed.set_footer(text=f"👥 {total_players} participantes • 🎮 {total_games} juegos totales")
+        footer_text = "━━━━━━━━━━━━━━━━━━━━━\n"
+        footer_text += f"👥 {total_players} participantes  •  🎮 {total_games} juegos totales"
+        
+        embed.add_field(
+            name="",
+            value=footer_text,
+            inline=False
+        )
         
         return embed
     
