@@ -19,3 +19,7 @@ env/
 # Sistema
 .DS_Store
 Thumbs.db
+
+buho.jpg
+test_hollow.py
+test_rawg.py

@@ -126,7 +126,7 @@ class Games(commands.Cog):
         puntos_platino = config.PUNTOS_CATEGORIA['platino'] if platino.value == "si" else 0
         puntos_totales = puntos_categoria + puntos_platino
         
-        # Registrar el juego (SIEMPRE is_recompleted = False)
+        # Registrar el juego
         has_platinum = platino.value == "si"
         success = await Game.create(
             discord_user_id=interaction.user.id,
@@ -135,7 +135,8 @@ class Games(commands.Cog):
             category=categoria_nombre,
             platform=plataforma.value,
             has_platinum=has_platinum,
-            is_recompleted=False  # ← SIEMPRE FALSE
+            is_recompleted=False,
+            image_url=game_image  # ← AGREGAR ESTO
         )
         
         if success:

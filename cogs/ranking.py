@@ -13,84 +13,35 @@ class Ranking(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="ranking", description="Ver el ranking general del concurso")
+    @app_commands.command(name="ranking", description="Ver el ranking interactivo del concurso")
     async def ranking(self, interaction: discord.Interaction):
-        """Muestra el ranking de todos los participantes"""
+        """Muestra el ranking paginado con botones interactivos"""
         
+        await interaction.response.defer()
+        
+        # Obtener todos los usuarios rankeados
         users = await User.get_all_ranked()
-        
-        if not users or all(user.total_games == 0 for user in users):
-            embed = discord.Embed(
-                title=f"{config.EMOJIS['ranking']} Ranking del Concurso",
-                description="Aún no hay juegos aprobados. ¡Sé el primero en registrar!",
-                color=config.COLORES['info']
-            )
-            await interaction.response.send_message(embed=embed)
-            return
-        
-        # Filtrar usuarios con al menos un juego
         ranked_users = [user for user in users if user.total_games > 0]
         
-        embed = discord.Embed(
-            title=f"{config.EMOJIS['ranking']} Ranking Anual 2025-2027",
-            description="Clasificación actual del concurso",
-            color=config.COLORES['info']
-        )
-        
-        # Emojis de medallas
-        medals = ['🥇', '🥈', '🥉']
-        
-        # Mostrar top participantes
-        for i, user in enumerate(ranked_users[:10], 1):
-            medal = medals[i-1] if i <= 3 else f"{i}."
-            
-            # Calcular barra de progreso visual
-            MAX_BARS = 20
-            FULL = "▰"
-            EMPTY = "▱"
-            
-            if ranked_users[0].total_points > 0:
-                RATIO = user.total_points / ranked_users[0].total_points
-                filled = int(RATIO * MAX_BARS)
-                bar = FULL * filled + EMPTY * (MAX_BARS - filled)
-                percentage = int(RATIO * 100)
-                bar_text = f"{bar} {percentage}%"
-            else:
-                bar_text = f"{EMPTY * MAX_BARS} 0%"
-            
-            # Marcar si es Elkie
-            elkie_marker = " 👑" if user.is_elkie else ""
-            
-            embed.add_field(
-                name=f"{medal} {user.username}{elkie_marker}",
-                value=f"{bar_text} **{user.total_points}** pts ({user.total_games} juegos)",
-                inline=False
+        if not ranked_users:
+            embed = discord.Embed(
+                title=f"{config.EMOJIS['ranking']} Ranking del Concurso",
+                description="Aún no hay participantes con juegos aprobados.",
+                color=config.COLORES['info']
             )
+            await interaction.followup.send(embed=embed)
+            return
         
-        # Información de premios
-        premio_text = "\n\n🏆 **PREMIOS:**\n"
+        # Crear vista con paginación
+        from views.ranking_view import RankingView
         
-        if ranked_users and ranked_users[0].is_elkie:
-            premio_text += (
-                f"⚠️ **REGLA ESPECIAL ACTIVA:**\n"
-                f"Como Elkie está en primer lugar:\n"
-                f"🥇 1er puesto: Juego de $30 USD\n"
-                f"🥈 2do puesto: Juego de $20 USD"
-            )
-        else:
-            premio_text += "🥇 1er puesto: Juego de $30 USD"
+        view = RankingView(ranked_users, page=0)
+        view.add_detail_buttons()  # Agregar botones de detalles
         
-        embed.description += premio_text
-        
-        # Estadísticas generales
-        total_games = sum(user.total_games for user in ranked_users)
-        total_points = sum(user.total_points for user in ranked_users)
-        
-        embed.set_footer(
-            text=f"Total: {total_games} juegos • {total_points} puntos • {len(ranked_users)} participantes"
+        await interaction.followup.send(
+            embed=view.get_embed(),
+            view=view
         )
-        
-        await interaction.response.send_message(embed=embed)
     
     @app_commands.command(name="mi-posicion", description="Ver tu posición actual en el ranking")
     async def mi_posicion(self, interaction: discord.Interaction):
