@@ -3,6 +3,7 @@ from discord.ext import commands
 import config
 import asyncio
 import os
+from models.database import init_db
 
 # Configurar intents
 intents = discord.Intents.default()
@@ -16,24 +17,31 @@ bot = commands.Bot(
     help_command=None  # Desactivamos el comando help por defecto
 )
 
-# Evento: Bot está listo
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado exitosamente!')
     print(f'Usuario: {bot.user.name}')
     print(f'ID: {bot.user.id}')
     
-    # Inicializar base de datos (ya incluye fix_database_schema)
-    await init_db()
+    # Inicializar base de datos
+    print('🔧 Inicializando base de datos...')
+    try:
+        await init_db()
+        print('✅ Base de datos lista')
+    except Exception as e:
+        print(f'❌ Error inicializando BD: {e}')
+        import traceback
+        traceback.print_exc()
     
     # Sincronizar comandos
+    print('🔧 Sincronizando comandos...')
     try:
         guild = discord.Object(id=config.GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
         await bot.tree.sync(guild=guild)
         print('✅ Comandos sincronizados')
     except Exception as e:
-        print(f'Error sincronizando comandos: {e}')
+        print(f'❌ Error sincronizando comandos: {e}')
 
 # Evento: Cuando alguien se une al servidor
 @bot.event
