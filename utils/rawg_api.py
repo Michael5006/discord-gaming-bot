@@ -24,7 +24,7 @@ class RAWGClient:
         # Publishers considerados Indie
         self.indie_publishers = [
             'devolver digital', 'annapurna', 'team17', 'raw fury',
-            'humble games', 'coffee stain', 'panic', 'finji', 'stunlock studios'
+            'humble games', 'coffee stain', 'panic', 'finji', 'stunlock studios', 'team cherry'
         ]
         
         # Franquicias AAA (Para asegurar que juegos como "RE4 Remake" sean AAA)
