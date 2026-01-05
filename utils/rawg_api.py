@@ -78,7 +78,7 @@ class RAWGClient:
                 'key': self.api_key,
                 'search': query,
                 'page_size': 40,
-                'exclude_additions': 'true'
+                'exclude_additions': 'false'
             }
             
             response = requests.get(
