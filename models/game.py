@@ -7,8 +7,8 @@ class Game:
     
     def __init__(self, id, discord_user_id, username, game_name, category,
                  platform, has_platinum, is_recompleted, total_points, 
-                 status, submission_date, reviewed_by, reviewed_at, rejection_reason,
-                 image_url=''):
+                 status, evidence_url, submission_date, reviewed_by, review_date,
+                 rejection_reason):
         self.id = id
         self.discord_user_id = discord_user_id
         self.username = username
@@ -19,11 +19,15 @@ class Game:
         self.is_recompleted = is_recompleted
         self.total_points = total_points
         self.status = status
-        self.submission_date = submission_date  # Cambiar de created_at
+        self.evidence_url = evidence_url  # Era image_url
+        self.submission_date = submission_date
         self.reviewed_by = reviewed_by
-        self.reviewed_at = reviewed_at
+        self.review_date = review_date  # Era reviewed_at
         self.rejection_reason = rejection_reason
-        self.image_url = image_url
+        
+        # Alias para compatibilidad
+        self.image_url = evidence_url  # Para que el código que use image_url funcione
+        self.reviewed_at = review_date
     
     @staticmethod
     async def create(discord_user_id: int, username: str, game_name: str, 
@@ -40,13 +44,14 @@ class Game:
             
             db = await get_db()
             
+            # Usar evidence_url y asegurar submission_date
             await db.execute('''
                 INSERT INTO games (
                     discord_user_id, username, game_name, category, 
                     platform, has_platinum, is_recompleted, total_points,
-                    status, image_url
+                    status, evidence_url, submission_date
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, datetime('now'))
             ''', (discord_user_id, username, game_name, category, 
                   platform, int(has_platinum), int(is_recompleted), 
                   points, image_url))
@@ -67,8 +72,8 @@ class Game:
             cursor = await db.execute('''
                 SELECT id, discord_user_id, username, game_name, category,
                        platform, has_platinum, is_recompleted, total_points,
-                       status, submission_date, reviewed_by, reviewed_at, 
-                       rejection_reason, image_url
+                       status, evidence_url, submission_date, reviewed_by, 
+                       review_date, rejection_reason
                 FROM games
                 WHERE status = 'PENDING'
                 ORDER BY submission_date ASC
@@ -96,8 +101,8 @@ class Game:
                 cursor = await db.execute('''
                     SELECT id, discord_user_id, username, game_name, category,
                            platform, has_platinum, is_recompleted, total_points,
-                           status, submission_date, reviewed_by, reviewed_at, 
-                           rejection_reason, image_url
+                           status, evidence_url, submission_date, reviewed_by, 
+                           review_date, rejection_reason
                     FROM games
                     WHERE discord_user_id = ? AND status = ?
                     ORDER BY submission_date DESC
@@ -106,8 +111,8 @@ class Game:
                 cursor = await db.execute('''
                     SELECT id, discord_user_id, username, game_name, category,
                            platform, has_platinum, is_recompleted, total_points,
-                           status, submission_date, reviewed_by, reviewed_at, 
-                           rejection_reason, image_url
+                           status, evidence_url, submission_date, reviewed_by, 
+                           review_date, rejection_reason
                     FROM games
                     WHERE discord_user_id = ?
                     ORDER BY submission_date DESC
@@ -133,8 +138,8 @@ class Game:
             cursor = await db.execute('''
                 SELECT id, discord_user_id, username, game_name, category,
                        platform, has_platinum, is_recompleted, total_points,
-                       status, submission_date, reviewed_by, reviewed_at, 
-                       rejection_reason, image_url
+                       status, evidence_url, submission_date, reviewed_by, 
+                       review_date, rejection_reason
                 FROM games
                 WHERE id = ?
             ''', (game_id,))
@@ -150,42 +155,42 @@ class Game:
             return None
     
     @staticmethod
-    async def approve(game_id, admin_id):
+    async def approve(game_id: int, admin_id: int) -> bool:
         """Aprueba un juego"""
-        db = await get_db()
         try:
+            db = await get_db()
             await db.execute('''
                 UPDATE games
                 SET status = 'APPROVED',
                     reviewed_by = ?,
-                    review_date = ?
-                WHERE id = ?
-            ''', (admin_id, datetime.now().isoformat(), game_id))
+                    review_date = datetime('now')
+                WHERE id = ? AND status = 'PENDING'
+            ''', (admin_id, game_id))
+            
             await db.commit()
+            await db.close()
             return True
         except Exception as e:
-            print(f'Error al aprobar juego: {e}')
+            print(f'Error aprobando juego: {e}')
             return False
-        finally:
-            await db.close()
     
     @staticmethod
-    async def reject(game_id, admin_id, reason):
+    async def reject(game_id: int, admin_id: int, reason: str) -> bool:
         """Rechaza un juego"""
-        db = await get_db()
         try:
+            db = await get_db()
             await db.execute('''
                 UPDATE games
                 SET status = 'REJECTED',
                     reviewed_by = ?,
-                    review_date = ?,
+                    review_date = datetime('now'),
                     rejection_reason = ?
-                WHERE id = ?
-            ''', (admin_id, datetime.now().isoformat(), reason, game_id))
+                WHERE id = ? AND status = 'PENDING'
+            ''', (admin_id, reason, game_id))
+            
             await db.commit()
+            await db.close()
             return True
         except Exception as e:
-            print(f'Error al rechazar juego: {e}')
+            print(f'Error rechazando juego: {e}')
             return False
-        finally:
-            await db.close()

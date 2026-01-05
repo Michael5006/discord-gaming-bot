@@ -93,31 +93,16 @@ async def init_db():
 
 
 async def fix_database_schema():
-    """Verifica y corrige el esquema de la BD agregando columnas faltantes"""
+    """Verifica que el esquema esté correcto"""
     try:
         db = await get_db()
         
-        # Obtener columnas actuales
         cursor = await db.execute("PRAGMA table_info(games)")
         columns = await cursor.fetchall()
         column_names = [col[1] for col in columns]
         
         print(f"📋 Columnas actuales en 'games': {', '.join(column_names)}")
-        
-        cambios = False
-        
-        # Agregar image_url si falta
-        if 'image_url' not in column_names:
-            print("⚙️ Agregando columna 'image_url'...")
-            await db.execute("ALTER TABLE games ADD COLUMN image_url TEXT DEFAULT ''")
-            cambios = True
-            print("✅ Columna 'image_url' agregada")
-        
-        if cambios:
-            await db.commit()
-            print("✅ Esquema de BD actualizado")
-        else:
-            print("✅ Esquema de BD está correcto")
+        print("✅ Esquema de BD está correcto")
         
         await db.close()
         
