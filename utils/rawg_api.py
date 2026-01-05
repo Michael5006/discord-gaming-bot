@@ -24,7 +24,26 @@ class RAWGClient:
         # Publishers considerados Indie
         self.indie_publishers = [
             'devolver digital', 'annapurna', 'team17', 'raw fury',
-            'humble games', 'coffee stain', 'panic', 'finji'
+            'humble games', 'coffee stain', 'panic', 'finji', 'Stunlock Studios'
+        ]
+        
+        # Franquicias AAA (Para asegurar que juegos como "RE4 Remake" sean AAA)
+        self.aaa_franchises = [
+            'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
+                'horizon', 'ghost of tsushima', 'spider-man', 'spiderman',
+                'call of duty', 'battlefield', 'assassin', 'far cry', 'watch dogs',
+                'grand theft auto', 'gta', 'red dead', 'elder scrolls', 'fallout',
+                'doom', 'wolfenstein', 'resident evil', 'final fantasy', 'dragon quest',
+                'metal gear', 'death stranding', 'cyberpunk', 'witcher',
+                'fifa', 'madden', 'nba 2k', 'forza', 'gran turismo',
+                'tomb raider', 'hitman', 'deus ex', 'borderlands', 'bioshock',
+                'mass effect', 'dragon age', 'destiny', 'overwatch', 'diablo',
+                'world of warcraft', 'starcraft', 'minecraft', 'fortnite',
+                'league of legends', 'valorant', 'apex legends', 'titanfall',
+                'dark souls', 'elden ring', 'bloodborne', 'sekiro',
+                'monster hunter', 'street fighter', 'mortal kombat', 'tekken',
+                'persona', 'yakuza', 'judgment', 'kingdom hearts',
+                'batman arkham', 'injustice', 'lego'
         ]
     
     def search_games(self, query: str, limit: int = 25) -> List[Dict]:
@@ -303,121 +322,49 @@ class RAWGClient:
         except Exception as e:
             print(f'Error formateando juego: {e}')
             return None
-    
+    ############
     def _detect_category(self, game: Dict, year: str, metacritic: int) -> str:
-        """Detecta la categoría del juego (Retro/Indie/AA/AAA)"""
-        
+        """Detecta la categoría basándose en Género > Publisher > Franquicia"""
         try:
-            # RETRO: Juegos hasta 2005 (6ta generación)
+            # 1. RETRO: Prioridad absoluta por año
             if year.isdigit() and int(year) <= 2005:
                 return 'Retro'
-            
-            # Obtener información
-            game_name_lower = game.get('name', '').lower()
-            
-            publishers = game.get('publishers', [])
-            publisher_names = [p.get('name', '').lower() for p in publishers]
-            
-            developers = game.get('developers', [])
-            developer_names = [d.get('name', '').lower() for d in developers]
-            
-            tags = game.get('tags', [])
-            tag_names = [t.get('name', '').lower() for t in tags]
-            
-            # Obtener rating (cantidad de reviews)
-            ratings_count = game.get('ratings_count', 0)
-            added = game.get('added', 0)
-            
-            # FRANCHISES AAA CONOCIDAS
-            aaa_franchises = [
-                'god of war', 'halo', 'gears of war', 'uncharted', 'the last of us',
-                'horizon', 'ghost of tsushima', 'spider-man', 'spiderman',
-                'call of duty', 'battlefield', 'assassin', 'far cry', 'watch dogs',
-                'grand theft auto', 'gta', 'red dead', 'elder scrolls', 'fallout',
-                'doom', 'wolfenstein', 'resident evil', 'final fantasy', 'dragon quest',
-                'metal gear', 'death stranding', 'cyberpunk', 'witcher',
-                'fifa', 'madden', 'nba 2k', 'forza', 'gran turismo',
-                'tomb raider', 'hitman', 'deus ex', 'borderlands', 'bioshock',
-                'mass effect', 'dragon age', 'destiny', 'overwatch', 'diablo',
-                'world of warcraft', 'starcraft', 'minecraft', 'fortnite',
-                'league of legends', 'valorant', 'apex legends', 'titanfall',
-                'dark souls', 'elden ring', 'bloodborne', 'sekiro',
-                'monster hunter', 'street fighter', 'mortal kombat', 'tekken',
-                'persona', 'yakuza', 'judgment', 'kingdom hearts',
-                'batman arkham', 'injustice', 'lego'
-            ]
-            
-            # Verificar si es una franchise AAA
-            is_aaa_franchise = False
-            for franchise in aaa_franchises:
-                if franchise in game_name_lower:
-                    is_aaa_franchise = True
-                    break
-            
-            # INDIE: Tags o publishers indie (pero no si es franchise AAA)
-            if not is_aaa_franchise:
-                if 'indie' in tag_names:
-                    if ratings_count < 100000:
-                        return 'Indie'
-                
-                for pub in publisher_names:
-                    for indie_pub in self.indie_publishers:
-                        if indie_pub in pub:
-                            return 'Indie'
-            
-            # AAA: Múltiples criterios
-            is_aaa = False
-            
-            # 1. Franchise AAA conocida
-            if is_aaa_franchise:
-                is_aaa = True
-            
-            # 2. Publisher AAA
-            for pub in publisher_names:
-                for aaa_pub in self.aaa_publishers:
-                    if aaa_pub in pub:
-                        is_aaa = True
-                        break
-            
-            # 3. Developer AAA
-            aaa_developers = [
-                'santa monica', 'naughty dog', 'insomniac', 'guerrilla',
-                'sucker punch', 'polyphony', 'kojima productions',
-                'bungie', 'id software', 'dice', 'respawn', 'infinity ward',
-                'treyarch', 'sledgehammer', 'from software', 'cd projekt',
-                'bethesda game studios', 'bioware', 'rocksteady', 'remedy'
-            ]
-            
-            for dev in developer_names:
-                for aaa_dev in aaa_developers:
-                    if aaa_dev in dev:
-                        is_aaa = True
-                        break
-            
-            # 4. Metacritic alto Y popularidad
-            if metacritic and metacritic >= 75 and added > 30000:
-                is_aaa = True
-            
-            # 5. Muy popular
-            if added > 100000:
-                is_aaa = True
-            
-            if is_aaa:
+
+            # Extraemos datos de la API
+            name_lower = game.get('name', '').lower()
+            # RAWG tiene una lista de géneros, la usamos:
+            genres = [g.get('name', '').lower() for g in game.get('genres', [])]
+            # También revisamos los tags por si acaso
+            tags = [t.get('name', '').lower() for t in game.get('tags', [])]
+            # Publishers y Developers
+            publishers = [p.get('name', '').lower() for p in game.get('publishers', [])]
+            developers = [d.get('name', '').lower() for d in game.get('developers', [])]
+
+            # 2. ¿ES AAA? (Basado en nombre o empresa)
+            is_aaa_pub = any(any(aaa in p for aaa in self.aaa_publishers) for p in publishers + developers)
+            is_aaa_brand = any(f in name_lower for f in self.aaa_franchises)
+
+            if is_aaa_pub or is_aaa_brand:
                 return 'Aaa'
-            
-            # AA: Metacritic medio-alto o popularidad media
-            if metacritic and metacritic >= 70:
-                return 'Aa'
-            
-            if added > 20000:
-                return 'Aa'
-            
-            # Por defecto: AA
+
+            # 3. ¿ES INDIE? 
+            # Si RAWG lo marca como género 'Indie', o está en tu lista de estudios indie
+            is_indie_genre = 'indie' in genres or 'indie' in tags
+            is_indie_pub = any(any(i in p for i in self.indie_publishers) for p in publishers + developers)
+
+            if is_indie_genre or is_indie_pub:
+                # Verificamos que no sea un error de tag (un AAA con tag indie)
+                if not is_aaa_pub:
+                    return 'Indie'
+
+            # 4. CASO DEFAULT: Todo lo que no es indie obvio ni AAA gigante, es AA
+            # Esto cubrirá juegos medianos o éxitos como V Rising si no tienen tags claros.
             return 'Aa'
-            
+
         except Exception as e:
-            print(f'Error detectando categoría: {e}')
+            print(f"Error en detección: {e}")
             return 'Aa'
+        ###############
     
     def _normalize_text(self, text: str) -> str:
         """Normaliza texto para comparación"""
